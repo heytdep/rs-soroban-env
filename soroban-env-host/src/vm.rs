@@ -299,22 +299,22 @@ impl Vm {
             Ok(vm)
         };
 
-    if cfg!(feature="time") {
-        let now = Instant::now();
+        if cfg!(feature = "time") {
+            let now = Instant::now();
 
-        let vm = instantiate()?;
+            let vm = instantiate()?;
 
-        host.as_budget().track_time(
-            ContractCostType::VmInstantiation,
-            now.elapsed().as_nanos() as u64,
-        )?;
-        
-        Ok(vm)
-    } else {
-        let vm = instantiate()?;
-        
-        Ok(vm)
-    }
+            host.as_budget().track_time(
+                ContractCostType::VmInstantiation,
+                now.elapsed().as_nanos() as u64,
+            )?;
+
+            Ok(vm)
+        } else {
+            let vm = instantiate()?;
+
+            Ok(vm)
+        }
     }
 
     pub(crate) fn get_memory(&self, host: &Host) -> Result<Memory, HostError> {
