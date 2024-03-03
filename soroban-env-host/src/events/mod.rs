@@ -4,6 +4,7 @@ pub(crate) mod system_events;
 pub(crate) use internal::{
     EventError, InternalDiagnosticArg, InternalDiagnosticEvent, InternalEventsBuffer,
 };
+use serde::Serialize;
 // expose them as pub use for benches
 use crate::{
     num::{i256_from_pieces, u256_from_pieces},
@@ -16,7 +17,7 @@ use crate::{
 pub(crate) use internal::{InternalContractEvent, InternalEvent};
 
 /// The external representation of a host event.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct HostEvent {
     pub event: crate::xdr::ContractEvent,
     // failed_call keeps track of if the call this event was emitted in failed
@@ -165,7 +166,7 @@ fn host_event_contract_id_is_strkey() {
 }
 
 /// The external representation of events in the chronological order.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct Events(pub Vec<HostEvent>);
 
 impl Host {

@@ -1,5 +1,6 @@
 use crate::SnapshotSourceWithArchive;
 use anyhow::{anyhow, bail, Context, Result};
+use serde::{Deserialize, Serialize};
 use soroban_env_host::budget::Budget;
 use soroban_env_host::fees::{
     compute_write_fee_per_1kb, FeeConfiguration, RentFeeConfiguration, WriteFeeConfiguration,
@@ -14,7 +15,7 @@ use std::rc::Rc;
 /// Network configuration necessary for Soroban operation simulations.
 ///
 /// This should normally be loaded from the ledger.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct NetworkConfig {
     pub fee_configuration: FeeConfiguration,
     pub rent_fee_configuration: RentFeeConfiguration,

@@ -1,3 +1,5 @@
+use serde::Serialize;
+
 use crate::xdr::{ScError, ScErrorCode, ScErrorType, ScVal};
 use crate::{
     impl_wrapper_as_and_to_val, impl_wrapper_tag_based_constructors,
@@ -17,7 +19,7 @@ use core::{
 /// [ScErrorType], and the error codes correspond to the code values stored in
 /// each variant of the [ScError] union.
 #[repr(transparent)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize)]
 pub struct Error(Val);
 
 impl_wrapper_tag_based_valconvert!(Error);

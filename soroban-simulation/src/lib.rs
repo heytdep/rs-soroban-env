@@ -5,7 +5,7 @@ pub use snapshot_source::SnapshotSourceWithArchive;
 mod network_config;
 mod snapshot_source;
 
-mod resources;
+pub mod resources;
 #[cfg(test)]
 mod test;
 #[cfg(any(test, feature = "testutils"))]

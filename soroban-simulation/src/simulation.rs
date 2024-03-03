@@ -5,6 +5,9 @@ use crate::resources::{
 };
 use crate::snapshot_source::SnapshotSourceWithArchive;
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use soroban_env_host::budget::Budget;
+use soroban_env_host::{Host, TryFromVal};
 use soroban_env_host::{
     e2e_invoke::invoke_host_function_in_recording_mode,
     e2e_invoke::LedgerEntryChange,
@@ -14,10 +17,11 @@ use soroban_env_host::{
         OperationBody, ScVal, SorobanAuthorizationEntry, SorobanResources, SorobanTransactionData,
     },
     xdr::{ExtendFootprintTtlOp, ExtensionPoint, LedgerEntry, ReadXdr, RestoreFootprintOp},
-    HostError, LedgerInfo, DEFAULT_XDR_RW_LIMITS,
+    LedgerInfo, DEFAULT_XDR_RW_LIMITS,
 };
 use std::rc::Rc;
 
+#[derive(Deserialize, Serialize, Default)]
 /// Configures the adjustment of a simulated value (e.g. resource or fee).
 /// The value is adjusted to be
 /// `max(value * multiplicative_factor, value + additive_factor)`
@@ -26,6 +30,7 @@ pub struct SimulationAdjustmentFactor {
     pub additive_factor: u32,
 }
 
+#[derive(Deserialize, Serialize, Default)]
 /// Configuration for adjusting the resources and fees for a simulated
 /// transaction.
 pub struct SimulationAdjustmentConfig {
@@ -39,17 +44,17 @@ pub struct SimulationAdjustmentConfig {
 /// Represents the state of a `LedgerEntry` before and after the
 /// transaction execution.
 /// `None` represents that entry was not present or removed.
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, Serialize)]
 pub struct LedgerEntryDiff {
     pub state_before: Option<LedgerEntry>,
     pub state_after: Option<LedgerEntry>,
 }
 
 /// Result of simulating `InvokeHostFunctionOp` operation.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct InvokeHostFunctionSimulationResult {
     /// Result value of the invoked function or error returned for invocation.
-    pub invoke_result: std::result::Result<ScVal, HostError>,
+    pub invoke_result: std::result::Result<ScVal, ScVal>,
     /// Authorization data, either passed through from the call (when provided),
     /// or recorded during the invocation.
     pub auth: Vec<SorobanAuthorizationEntry>,
@@ -77,6 +82,7 @@ pub struct InvokeHostFunctionSimulationResult {
     /// Empty for failed invocations.
     pub modified_entries: Vec<LedgerEntryDiff>,
 }
+
 
 /// Result of simulating `ExtendFootprintTtlOp` operation.
 #[derive(Eq, PartialEq, Debug)]
@@ -116,7 +122,7 @@ pub struct RestoreOpSimulationResult {
 #[allow(clippy::too_many_arguments)]
 pub fn simulate_invoke_host_function_op(
     snapshot_source: Rc<dyn SnapshotSource>,
-    network_config: &NetworkConfig,
+    network_config: Option<NetworkConfig>,
     adjustment_config: &SimulationAdjustmentConfig,
     ledger_info: &LedgerInfo,
     host_fn: HostFunction,
@@ -125,7 +131,12 @@ pub fn simulate_invoke_host_function_op(
     base_prng_seed: [u8; 32],
     enable_diagnostics: bool,
 ) -> Result<InvokeHostFunctionSimulationResult> {
-    let budget = network_config.create_budget()?;
+    let (budget, network_config) = if let Some(configs) = network_config {
+        (configs.create_budget()?, configs)
+    } else {
+        (Budget::default(), NetworkConfig::default())
+    };
+    
     let mut diagnostic_events = vec![];
     let recording_result = invoke_host_function_in_recording_mode(
         &budget,
@@ -148,7 +159,7 @@ pub fn simulate_invoke_host_function_op(
     let mut simulation_result = InvokeHostFunctionSimulationResult {
         // Don't distinguish between the errors that happen during invocation vs
         // during setup as that seems too granular.
-        invoke_result,
+        invoke_result: invoke_result.map_err(|e| ScVal::try_from_val(&Host::default(), &e.error.to_val()).unwrap()),
         simulated_instructions: budget.get_cpu_insns_consumed()?.try_into()?,
         simulated_memory: budget.get_mem_bytes_consumed()?.try_into()?,
         diagnostic_events,
@@ -185,7 +196,7 @@ pub fn simulate_invoke_host_function_op(
         recording_result.contract_events_and_return_value_size,
     )?;
     let resource_fee = compute_resource_fee(
-        network_config,
+        &network_config,
         &ledger_info,
         &transaction_resources,
         &rent_changes,

@@ -62,7 +62,7 @@ impl SimulationAdjustmentFactor {
     }
 }
 
-pub(crate) fn compute_resource_fee(
+pub fn compute_resource_fee(
     network_config: &NetworkConfig,
     ledger_info: &LedgerInfo,
     resources: &TransactionResources,
@@ -82,7 +82,7 @@ pub(crate) fn compute_resource_fee(
     non_refundable_fee.saturating_add(refundable_fee)
 }
 
-pub(crate) fn compute_adjusted_transaction_resources(
+pub fn compute_adjusted_transaction_resources(
     operation: OperationBody,
     simulated_operation_resources: &mut SorobanResources,
     adjustment_config: &SimulationAdjustmentConfig,
@@ -105,7 +105,8 @@ pub(crate) fn compute_adjusted_transaction_resources(
     })
 }
 
-pub(crate) fn simulate_invoke_host_function_op_resources(
+// Expose function for composability of other libraries
+pub fn simulate_invoke_host_function_op_resources(
     ledger_changes: &[LedgerEntryChange],
     simulated_instructions: u32,
 ) -> Result<(SorobanResources, Vec<LedgerEntryRentChange>)> {

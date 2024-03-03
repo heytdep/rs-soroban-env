@@ -7,6 +7,7 @@ use crate::{
 
 #[cfg(any(test, feature = "testutils"))]
 use backtrace::{Backtrace, BacktraceFrame};
+use serde::Serialize;
 use core::fmt::Debug;
 use std::{
     cell::{Ref, RefCell, RefMut},
@@ -16,14 +17,14 @@ use std::{
 
 use super::metered_clone::MeteredClone;
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub(crate) struct DebugInfo {
     events: Events,
     #[cfg(any(test, feature = "testutils"))]
     backtrace: Backtrace,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub struct HostError {
     pub error: Error,
     pub(crate) info: Option<Box<DebugInfo>>,

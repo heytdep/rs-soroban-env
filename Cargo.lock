@@ -84,6 +84,7 @@ dependencies = [
  "miniz_oxide",
  "object",
  "rustc-demangle",
+ "serde",
 ]
 
 [[package]]
@@ -1402,6 +1403,7 @@ dependencies = [
  "rand",
  "rand_chacha",
  "rustversion",
+ "serde",
  "serde_json",
  "sha2",
  "sha3",
@@ -1443,6 +1445,7 @@ dependencies = [
  "anyhow",
  "pretty_assertions",
  "rand",
+ "serde",
  "soroban-env-host",
  "soroban-test-wasms",
  "static_assertions",
