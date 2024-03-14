@@ -15,7 +15,7 @@ use std::rc::Rc;
 /// Network configuration necessary for Soroban operation simulations.
 ///
 /// This should normally be loaded from the ledger.
-#[derive(Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Default, PartialEq, Eq, Deserialize, Serialize, Clone)]
 pub struct NetworkConfig {
     pub fee_configuration: FeeConfiguration,
     pub rent_fee_configuration: RentFeeConfiguration,

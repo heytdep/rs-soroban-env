@@ -43,7 +43,7 @@ pub struct TransactionResources {
 /// `fee_per_write_1kb`, that has to be computed via `compute_write_fee_per_1kb`
 /// function.
 
-#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub struct FeeConfiguration {
     /// Fee per `INSTRUCTIONS_INCREMENT=10000` instructions.
     pub fee_per_instruction_increment: i64,
@@ -110,7 +110,7 @@ pub struct LedgerEntryRentChange {
 /// `fee_per_write_1kb`, that has to be computed via `compute_write_fee_per_1kb`
 /// function.
 
-#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize, Clone)]
 pub struct RentFeeConfiguration {
     /// Fee per 1KB written to ledger.
     /// This is the same field as in `FeeConfiguration` and it has to be
