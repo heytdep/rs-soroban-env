@@ -41,6 +41,8 @@ pub use host::{
 };
 pub use soroban_env_common::*;
 
+pub use wasmi;
+
 pub mod ledger_info;
 pub use ledger_info::LedgerInfo;
 

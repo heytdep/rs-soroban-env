@@ -291,7 +291,7 @@ pub fn index_to_handle(host: &Host, index: usize, relative: bool) -> Result<u32,
 }
 
 impl Host {
-    pub(crate) fn relative_to_absolute(&self, val: Val) -> Result<Val, HostError> {
+    pub fn relative_to_absolute(&self, val: Val) -> Result<Val, HostError> {
         if let Ok(obj) = Object::try_from(val) {
             let handle = obj.get_handle();
             return if is_relative_object_handle(handle) {
@@ -341,7 +341,7 @@ impl Host {
         Ok(val)
     }
 
-    pub(crate) fn absolute_to_relative(&self, val: Val) -> Result<Val, HostError> {
+    pub fn absolute_to_relative(&self, val: Val) -> Result<Val, HostError> {
         if let Ok(obj) = Object::try_from(val) {
             let handle = obj.get_handle();
             return if is_relative_object_handle(handle) {

@@ -341,7 +341,7 @@ impl Host {
 
     // Version of `to_host_val` for the internal cases where the value has to
     // be valid by construction (e.g. read from ledger).
-    pub(crate) fn to_valid_host_val(&self, v: &ScVal) -> Result<Val, HostError> {
+    pub fn to_valid_host_val(&self, v: &ScVal) -> Result<Val, HostError> {
         self.to_host_val(v).map_err(|e| {
             if e.error.is_type(ScErrorType::Budget) {
                 e

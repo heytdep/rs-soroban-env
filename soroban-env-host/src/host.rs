@@ -460,6 +460,13 @@ impl Host {
         Ok(())
     }
 
+
+    pub fn get_ledger_info(&self) -> Result<Option<LedgerInfo>, HostError> {
+        let info = self.try_borrow_ledger()?;
+        
+        Ok(info.clone())
+    }
+    
     pub fn set_ledger_info(&self, info: LedgerInfo) -> Result<(), HostError> {
         *self.try_borrow_ledger_mut()? = Some(info);
         Ok(())
