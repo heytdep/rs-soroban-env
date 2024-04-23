@@ -1,12 +1,12 @@
 use crate::{
-    budget::AsBudget,
-    host::Frame,
-    host_object::MemHostObjectType,
-    xdr::{ContractCostType, ScErrorCode, ScErrorType, ScSymbol},
-    Compare, Host, HostError, Symbol, SymbolObject, SymbolSmall, SymbolStr, U32Val, Vm, VmCaller,
+    budget::AsBudget, host::Frame, host_object::MemHostObjectType, vm::CustomContextVM, xdr::{ContractCostType, ScErrorCode, ScErrorType, ScSymbol}, Compare, Host, HostError, Symbol, SymbolObject, SymbolSmall, SymbolStr, U32Val, Vm, VmCaller
 };
 
 use std::{cmp::Ordering, rc::Rc};
+
+#[cfg(any(test, feature = "testutils"))]
+#[allow(unused_imports)]
+use crate::host::frame::TestContractFrame;
 
 /// Helper type for host functions that receive a position and length pair and
 /// expect to operate on a VM. Pos and len are not validated and len may be a
@@ -16,6 +16,15 @@ pub(crate) struct MemFnArgs {
     pub(crate) pos: u32,
     pub(crate) len: u32,
 }
+
+
+#[cfg(any(test, feature = "testutils"))]
+pub(crate) struct MemFnArgsCustomVm<M: CustomContextVM> {
+    pub(crate) mem: M,
+    pub(crate) pos: u32,
+    pub(crate) len: u32,
+}
+
 
 impl Host {
     // Notes on metering: free
@@ -32,6 +41,7 @@ impl Host {
                 let vm = Rc::clone(&vm);
                 Ok(MemFnArgs { vm, pos, len })
             }
+
             _ => Err(self.err(
                 ScErrorType::WasmVm,
                 ScErrorCode::InternalError,
@@ -39,6 +49,18 @@ impl Host {
                 &[],
             )),
         })
+    }
+
+    #[cfg(any(test, feature = "testutils"))]
+    pub(crate) fn get_mem_fn_args_custom_vm<M: CustomContextVM>(&self, m: M, pos: U32Val, len: U32Val) -> MemFnArgsCustomVm<M> {
+        let pos: u32 = pos.into();
+        let len: u32 = len.into();
+        
+        MemFnArgsCustomVm::<M> {
+            mem: m,
+            pos,
+            len
+        }
     }
 
     pub(crate) fn metered_vm_write_bytes_to_linear_memory(
@@ -69,6 +91,18 @@ impl Host {
             mem.read(vmcaller.try_mut()?, mem_pos as usize, buf)
                 .map_err(|me| wasmi::Error::Memory(me)),
         )
+    }
+
+    pub(crate) fn metered_vm_read_bytes_from_linear_memory_mem<M: CustomContextVM>(
+        &self,
+        mem: M,
+        mem_pos: u32,
+        buf: &mut [u8],
+    ) -> Result<(), HostError> {
+        self.charge_budget(ContractCostType::MemCpy, Some(buf.len() as u64))?;
+        mem.read(mem_pos as usize, buf);
+
+        Ok(())
     }
 
     // Note on metering: covers the cost of memcpy from bytes into the linear memory.
@@ -154,6 +188,60 @@ impl Host {
                     ScErrorType::Context,
                     ScErrorCode::InternalError,
                     "chunks produced chunk of unexpected length",
+                    &[],
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn metered_vm_scan_slices_in_linear_memory_mem<M: CustomContextVM>(
+        &self,
+        m: M,
+        mut mem_pos: u32,
+        num_slices: usize,
+        mut callback: impl FnMut(usize, &[u8]) -> Result<(), HostError>,
+    ) -> Result<(), HostError> {
+        let mem_data = m.data();
+        // charge the cost of copying the slices (pointers to the content, not
+        // the content themselves) upfront.
+        self.charge_budget(
+            ContractCostType::MemCpy,
+            Some((num_slices as u64).saturating_mul(8)),
+        )?;
+
+        for i in 0..num_slices {
+            // This is _very specific_ about what it's reading: 8 bytes
+            // arranged as a 4 byte pointer followed by a 4 byte length.
+
+            let next_pos = mem_pos
+                .checked_add(8)
+                .ok_or_else(|| self.err_arith_overflow())?;
+            let slice_ref_range = mem_pos as usize..next_pos as usize;
+            let slice_ref_slice = mem_data
+                .get(slice_ref_range)
+                .ok_or_else(|| self.err_oob_linear_memory())?;
+            mem_pos = next_pos;
+
+            if let Ok(s) = TryInto::<&[u8; 8]>::try_into(slice_ref_slice) {
+                let ptr_bytes: [u8; 4] = s[0..4].try_into().unwrap();
+                let len_bytes: [u8; 4] = s[4..8].try_into().unwrap();
+                let slice_ptr = u32::from_le_bytes(ptr_bytes);
+                let slice_len = u32::from_le_bytes(len_bytes);
+                let slice_end = slice_ptr
+                    .checked_add(slice_len)
+                    .ok_or_else(|| self.err_arith_overflow())?;
+                let slice_range = slice_ptr as usize..slice_end as usize;
+                let slice = mem_data
+                    .get(slice_range)
+                    .ok_or_else(|| self.err_oob_linear_memory())?;
+                callback(i, slice)?
+            } else {
+                // This should be impossible unless there's an error above, but just in case.
+                return Err(self.err(
+                    ScErrorType::Context,
+                    ScErrorCode::InternalError,
+                    "slice-scan produced slice of unexpected length",
                     &[],
                 ));
             }
@@ -362,13 +450,28 @@ impl Host {
         })
     }
 
+    pub(crate) fn memobj_new_from_linear_memory_mem<HOT: MemHostObjectType, M: CustomContextVM>(
+        &self,
+        m: M,
+        lm_pos: U32Val,
+        len: U32Val,
+    ) -> Result<HOT::Wrapper, HostError> {
+        let MemFnArgsCustomVm::<M> { mem, pos, len } = self.get_mem_fn_args_custom_vm(m, lm_pos, len);
+        
+        let mut vnew: Vec<u8> = vec![0; len as usize];
+        self.metered_vm_read_bytes_from_linear_memory_mem(mem, pos, &mut vnew)?;
+        self.add_host_object::<HOT>(HOT::try_from_bytes(self, vnew)?)
+    }
+
     pub(crate) fn memobj_new_from_linear_memory<HOT: MemHostObjectType>(
         &self,
         vmcaller: &mut VmCaller<Host>,
         lm_pos: U32Val,
         len: U32Val,
     ) -> Result<HOT::Wrapper, HostError> {
-        let MemFnArgs { vm, pos, len } = self.get_mem_fn_args(lm_pos, len)?;
+        let args = self.get_mem_fn_args(lm_pos, len);
+
+        let MemFnArgs { vm, pos, len } = args?;
         self.charge_budget(ContractCostType::MemAlloc, Some(len as u64))?;
         let mut vnew: Vec<u8> = vec![0; len as usize];
         self.metered_vm_read_bytes_from_linear_memory(vmcaller, &vm, pos, &mut vnew)?;

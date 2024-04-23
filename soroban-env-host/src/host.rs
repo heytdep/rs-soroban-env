@@ -10,7 +10,7 @@ use crate::{
     impl_wrapping_obj_to_num,
     num::*,
     storage::Storage,
-    vm::ModuleCache,
+    vm::{ModuleCache, CustomContextVM},
     xdr::{
         int128_helpers, AccountId, Asset, ContractCostType, ContractEventType, ContractExecutable,
         ContractIdPreimage, ContractIdPreimageFromAddress, CreateContractArgs, Duration, Hash,
@@ -49,7 +49,7 @@ pub use trace::{TraceEvent, TraceHook, TraceRecord, TraceState};
 
 use self::{
     frame::{Context, ContractReentryMode},
-    mem_helper::MemFnArgs,
+    mem_helper::{MemFnArgs, MemFnArgsCustomVm},
     metered_clone::{MeteredClone, MeteredContainer},
     metered_xdr::metered_write_xdr,
     prng::Prng,
@@ -315,6 +315,66 @@ impl Debug for Host {
 }
 
 impl Host {
+    pub fn bytes_new_from_linear_memory_mem<M: CustomContextVM>(
+        &self,
+        m: M,
+        lm_pos: U32Val,
+        len: U32Val,
+    ) -> Result<BytesObject, HostError> {
+        self.memobj_new_from_linear_memory_mem::<ScBytes, M>(m, lm_pos, len)
+    }
+
+    pub fn string_new_from_linear_memory_mem<M: CustomContextVM>(
+        &self,
+        m: M,
+        lm_pos: U32Val,
+        len: U32Val,
+    ) -> Result<StringObject, HostError> {
+        self.memobj_new_from_linear_memory_mem::<ScString, M>(m, lm_pos, len)
+    }
+
+    pub fn symbol_new_from_linear_memory_mem<M: CustomContextVM>(
+        &self,
+        m: M,
+        lm_pos: U32Val,
+        len: U32Val,
+    ) -> Result<SymbolObject, HostError> {
+        self.memobj_new_from_linear_memory_mem::<ScSymbol, M>(m, lm_pos, len)
+    }
+
+    pub fn symbol_index_in_linear_memory_mem<M: CustomContextVM>(
+        &self,
+        m: M,
+        sym: Symbol,
+        lm_pos: U32Val,
+        len: U32Val,
+    ) -> Result<U32Val, HostError> {
+        let MemFnArgsCustomVm { mem, pos, len } = self.get_mem_fn_args_custom_vm(m, lm_pos, len);
+        let mut found = None;
+        self.metered_vm_scan_slices_in_linear_memory_mem(
+            mem,
+            pos,
+            len as usize,
+            |i, slice| {
+                if self.symbol_matches(slice, sym)? {
+                    if found.is_none() {
+                        found = Some(self.usize_to_u32(i)?)
+                    }
+                }
+                Ok(())
+            },
+        )?;
+        match found {
+            None => Err(self.err(
+                ScErrorType::Value,
+                ScErrorCode::MissingValue,
+                "symbol not found in linear memory slices",
+                &[sym.to_val()],
+            )),
+            Some(idx) => Ok(U32Val::from(idx)),
+        }
+    }
+
     /// Constructs a new [`Host`] that will use the provided [`Storage`] for
     /// contract-data access functions such as
     /// [`Env::get_contract_data`].

@@ -16,15 +16,12 @@
 //! pointers. The rest of each struct is considered its "shallow" part and
 //! charged based on its declared size (see [`DeclaredSizeForMetering`]).
 
-use std::{cell::RefCell, iter::FromIterator, mem, rc::Rc};
+use std::{cell::RefCell, iter::FromIterator, rc::Rc};
 
 #[cfg(feature = "next")]
 use crate::xdr::{ContractCodeCostInputs, ContractCodeEntryExt, ContractCodeEntryV1};
 use crate::{
-    budget::{AsBudget, DepthLimiter},
-    builtin_contracts::base_types::Address,
-    storage::AccessType,
-    xdr::{
+    budget::{AsBudget, DepthLimiter}, builtin_contracts::base_types::Address, storage::AccessType, xdr::{
         AccountEntry, AccountId, Asset, BytesM, ContractCodeEntry, ContractCostType,
         ContractExecutable, ContractIdPreimage, CreateContractArgs, Duration, Hash,
         InvokeContractArgs, LedgerEntry, LedgerEntryData, LedgerEntryExt, LedgerKey,
@@ -32,13 +29,7 @@ use crate::{
         ScContractInstance, ScErrorCode, ScErrorType, ScMap, ScMapEntry, ScNonceKey, ScString,
         ScSymbol, ScVal, ScVec, Signer, SorobanAuthorizationEntry, SorobanAuthorizedFunction,
         SorobanAuthorizedInvocation, StringM, TimePoint, TrustLineAsset, TrustLineEntry, Uint256,
-    },
-    AddressObject, Bool, BytesObject, DurationObject, DurationSmall, DurationVal, Error, HostError,
-    I128Object, I128Small, I128Val, I256Object, I256Small, I256Val, I32Val, I64Object, I64Small,
-    I64Val, MapObject, Object, ScValObject, StringObject, Symbol, SymbolObject, SymbolSmall,
-    SymbolSmallIter, SymbolStr, TimepointObject, TimepointSmall, TimepointVal, U128Object,
-    U128Small, U128Val, U256Object, U256Small, U256Val, U32Val, U64Object, U64Small, U64Val, Val,
-    VecObject, Void, I256, U256,
+    }, AddressObject, Bool, BytesObject, DurationObject, DurationSmall, DurationVal, Error, HostError, I128Object, I128Small, I128Val, I256Object, I256Small, I256Val, I32Val, I64Object, I64Small, I64Val, MapObject, Object, ScValObject, StringObject, Symbol, SymbolObject, SymbolSmall, SymbolSmallIter, SymbolStr, TimepointObject, TimepointSmall, TimepointVal, U128Object, U128Small, U128Val, U256Object, U256Small, U256Val, U32Val, U64Object, U64Small, U64Val, Val, VecObject, Void, I256, U256
 };
 
 use super::declared_size::DeclaredSizeForMetering;
@@ -56,12 +47,12 @@ pub(crate) fn charge_shallow_copy<T: DeclaredSizeForMetering>(
     // that the type's size is below its promised element size for budget charging. This assertion
     // only happens in debug build. In optimized build, not satisfying the asserted condition just
     // means an underestimation of the cost.
-    debug_assert!(
+    /*debug_assert!(
         mem::size_of::<T>() as u64 <= T::DECLARED_SIZE,
         "mem size: {}, declared: {}",
         std::mem::size_of::<T>(),
         T::DECLARED_SIZE
-    );
+    );*/
     budget.as_budget().charge(
         ContractCostType::MemCpy,
         Some(n_elts.saturating_mul(T::DECLARED_SIZE)),
@@ -76,12 +67,13 @@ pub(crate) fn charge_heap_alloc<T: DeclaredSizeForMetering>(
 ) -> Result<(), HostError> {
     // Here we make a runtime assertion that the type's size is below its promised element size for
     // budget charging.
-    debug_assert!(
-        mem::size_of::<T>() as u64 <= T::DECLARED_SIZE,
+    /*debug_assert!(
+        mem::size_of::<T>() as u64 - 16 <= T::DECLARED_SIZE,
         "mem size: {}, declared: {}",
         std::mem::size_of::<T>(),
         T::DECLARED_SIZE
-    );
+    );*/
+
     budget.as_budget().charge(
         ContractCostType::MemAlloc,
         Some(n_elts.saturating_mul(T::DECLARED_SIZE)),

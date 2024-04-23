@@ -498,3 +498,13 @@ impl Vm {
         })
     }
 }
+
+
+/// A trait that VMs that want to work with a custom context should
+/// implement.
+pub trait CustomContextVM {
+    /// Return WASMI's Memory handle.
+    fn read(&self, mem_pos: usize, buf: &mut [u8]);
+
+    fn data(&self) -> &[u8];
+}
