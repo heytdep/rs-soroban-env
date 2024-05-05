@@ -1,5 +1,7 @@
 # rs-soroban-env
 
+> **Warning**: this fork of the soroban host environment is not SDF-maintained, hasn't been audited, doesn't enforce correct resources metering and should not be used to execute contracts in a Soroban production environment. This is a fork that enables Soroban to be hardwired into [Zephyr](https://mercurydata.app/zephyr-vm).
+
 Rust contract-environment interface and (optional) host implementation for Soroban.
 
 The `soroban-env-common` crate contains elements of the shared environment-interface between smart contract guest and host: the `Env` trait that defines the set of available environment functions as well as the `Val` type that can pass back and forth through the WASM calling convention. Additionally small wrappers around subtypes of `Val` are included: `Object`, `Symbol`, `Error`, etc.
