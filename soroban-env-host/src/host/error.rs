@@ -24,7 +24,7 @@ pub(crate) struct DebugInfo {
     backtrace: Backtrace,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone)]
 pub struct HostError {
     pub error: Error,
     pub(crate) info: Option<Box<DebugInfo>>,

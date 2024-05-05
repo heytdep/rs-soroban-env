@@ -49,7 +49,7 @@ pub use trace::{TraceEvent, TraceHook, TraceRecord, TraceState};
 
 use self::{
     frame::{Context, ContractReentryMode},
-    mem_helper::{MemFnArgs, MemFnArgsCustomVm},
+    mem_helper::{MemFnArgs, MemFnArgsCustomVm, MemFnArgsCustomVmMut},
     metered_clone::{MeteredClone, MeteredContainer},
     metered_xdr::metered_write_xdr,
     prng::Prng,
@@ -315,13 +315,109 @@ impl Debug for Host {
 }
 
 impl Host {
+    pub fn vec_new_from_linear_memory_mem<M: CustomContextVM>(
+        &self,
+        m: M,
+        vals_pos: U32Val,
+        len: U32Val,
+    ) -> Result<VecObject, HostError> {
+
+        let MemFnArgsCustomVm { pos, len, .. } = self.get_mem_fn_args_custom_vm(&m, vals_pos, len);
+        Vec::<Val>::charge_bulk_init_cpy(len as u64, self)?;
+        let mut vals: Vec<Val> = vec![Val::VOID.to_val(); len as usize];
+        // charge for conversion from bytes to `Val`s
+        self.charge_budget(
+            ContractCostType::MemCpy,
+            Some((len as u64).saturating_mul(8)),
+        )?;
+        self.metered_vm_read_vals_from_linear_memory_mem::<8, Val, M>(
+            &m,
+            pos,
+            vals.as_mut_slice(),
+            |buf| Ok(Val::from_payload(u64::from_le_bytes(*buf))),
+        )?;
+        
+        for v in vals.iter() {
+            self.check_val_integrity(*v)?;
+        }
+        self.add_host_object(HostVec::from_vec(vals)?)
+    }
+
+    pub fn map_unpack_to_linear_memory_fn_mem<M: CustomContextVM>(
+        &self,
+        m: &mut M,
+        map: MapObject,
+        keys_pos: U32Val,
+        vals_pos: U32Val,
+        len: U32Val,
+    ) -> Result<Void, HostError> {
+        let MemFnArgsCustomVmMut {
+            pos: keys_pos,
+            len,
+            ..
+        } = self.get_mem_fn_args_custom_vm_mut(m, keys_pos, len);
+        self.visit_obj(map, |mapobj: &HostMap| {
+            if mapobj.len() != len as usize {
+                return Err(self.err(
+                    ScErrorType::Object,
+                    ScErrorCode::UnexpectedSize,
+                    "differing host map and output slice lengths when unpacking map to linear memory",
+                    &[],
+                ));
+            }
+            // Step 1: check all key symbols.
+            self.metered_vm_scan_slices_in_linear_memory_mem(
+                m,
+                keys_pos,
+                len as usize,
+                |n, slice| {
+                    let sym = Symbol::try_from(
+                        mapobj.get_at_index(n, self).map_err(|he|
+                            if he.error.is_type(ScErrorType::Budget) {
+                                he
+                            } else {
+                                self.err(
+                                    ScErrorType::Object,
+                                    ScErrorCode::IndexBounds,
+                                    "vector out of bounds while unpacking map to linear memory",
+                                    &[],
+                                )
+                            }
+                        )?.0
+                    )?;
+                    self.check_symbol_matches(slice, sym)?;
+                    Ok(())
+                },
+            )?;
+
+            // Step 2: write all vals.
+            // charges memcpy of converting map entries into bytes
+            self.charge_budget(ContractCostType::MemCpy, Some((len as u64).saturating_mul(8)))?;
+            
+            self.metered_vm_write_vals_to_linear_memory_mem(
+                m,
+                vals_pos.into(),
+                mapobj.map.as_slice(),
+                |pair| {
+                    Ok(u64::to_le_bytes(
+                        pair.1.get_payload(),
+                    ))
+                },
+            )?;
+            
+            Ok(())
+        })?;
+
+        Ok(Val::VOID)
+    }
+
     pub fn bytes_new_from_linear_memory_mem<M: CustomContextVM>(
         &self,
         m: M,
         lm_pos: U32Val,
         len: U32Val,
     ) -> Result<BytesObject, HostError> {
-        self.memobj_new_from_linear_memory_mem::<ScBytes, M>(m, lm_pos, len)
+        self.memobj_new_from_linear_memory_mem::<ScBytes, M>(&m, lm_pos, len)
     }
 
     pub fn string_new_from_linear_memory_mem<M: CustomContextVM>(
@@ -330,7 +426,7 @@ impl Host {
         lm_pos: U32Val,
         len: U32Val,
     ) -> Result<StringObject, HostError> {
-        self.memobj_new_from_linear_memory_mem::<ScString, M>(m, lm_pos, len)
+        self.memobj_new_from_linear_memory_mem::<ScString, M>(&m, lm_pos, len)
     }
 
     pub fn symbol_new_from_linear_memory_mem<M: CustomContextVM>(
@@ -339,7 +435,7 @@ impl Host {
         lm_pos: U32Val,
         len: U32Val,
     ) -> Result<SymbolObject, HostError> {
-        self.memobj_new_from_linear_memory_mem::<ScSymbol, M>(m, lm_pos, len)
+        self.memobj_new_from_linear_memory_mem::<ScSymbol, M>(&m, lm_pos, len)
     }
 
     pub fn symbol_index_in_linear_memory_mem<M: CustomContextVM>(
@@ -349,7 +445,7 @@ impl Host {
         lm_pos: U32Val,
         len: U32Val,
     ) -> Result<U32Val, HostError> {
-        let MemFnArgsCustomVm { mem, pos, len } = self.get_mem_fn_args_custom_vm(m, lm_pos, len);
+        let MemFnArgsCustomVm { mem, pos, len } = self.get_mem_fn_args_custom_vm(&m, lm_pos, len);
         let mut found = None;
         self.metered_vm_scan_slices_in_linear_memory_mem(
             mem,
@@ -374,6 +470,18 @@ impl Host {
             Some(idx) => Ok(U32Val::from(idx)),
         }
     }
+/* 
+    pub fn bytes_copy_to_linear_memory_mem<M: CustomContextVM>(
+        &self,
+        m: M,
+        b: BytesObject,
+        b_pos: U32Val,
+        lm_pos: U32Val,
+        len: U32Val,
+    ) -> Result<Void, HostError> {
+        self.memobj_copy_to_linear_memory::<ScBytes>(vmcaller, b, b_pos, lm_pos, len)?;
+        Ok(Val::VOID)
+    } */
 
     /// Constructs a new [`Host`] that will use the provided [`Storage`] for
     /// contract-data access functions such as
@@ -2465,6 +2573,7 @@ impl VmCallerEnv for Host {
         self.memobj_copy_to_linear_memory::<ScBytes>(vmcaller, b, b_pos, lm_pos, len)?;
         Ok(Val::VOID)
     }
+  
 
     fn bytes_copy_from_linear_memory(
         &self,

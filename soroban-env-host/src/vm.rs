@@ -507,4 +507,8 @@ pub trait CustomContextVM {
     fn read(&self, mem_pos: usize, buf: &mut [u8]);
 
     fn data(&self) -> &[u8];
+
+    fn write(&mut self, pos:u32, slice: &[u8]) -> i64;
+
+    fn data_mut(&mut self) -> &mut [u8];
 }

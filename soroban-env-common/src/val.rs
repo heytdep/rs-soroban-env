@@ -1,7 +1,7 @@
 // This permits globals prouced by derive(num_enum::TryFromPrimitive) below.
 #![cfg_attr(test, allow(non_upper_case_globals))]
 
-use serde::Serialize;
+//use serde::Serialize;
 
 use crate::xdr::{ScError, ScVal, ScValType};
 use crate::{
@@ -247,7 +247,7 @@ impl Tag {
 }
 
 #[repr(transparent)]
-#[derive(Copy, Clone, Serialize)]
+#[derive(Copy, Clone)]
 pub struct Val(u64);
 
 impl Default for Val {
