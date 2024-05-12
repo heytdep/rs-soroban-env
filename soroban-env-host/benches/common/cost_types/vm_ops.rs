@@ -6,7 +6,6 @@ use soroban_env_host::{
     vm::{ParsedModule, VersionedContractCodeCostInputs},
     xdr, Host,
 };
-use std::rc::Rc;
 
 // Protocol 20 coarse cost model.
 pub(crate) struct VmInstantiationMeasure;
@@ -30,7 +29,6 @@ macro_rules! impl_measurement_for_instantiation_cost_type {
                 let mut cost_inputs = VersionedContractCodeCostInputs::V0 {
                     wasm_bytes: wasm.len(),
                 };
-                #[cfg(feature = "next")]
                 if $USE_REFINED_INPUTS {
                     cost_inputs = VersionedContractCodeCostInputs::V1(
                         soroban_env_host::vm::ParsedModule::extract_refined_contract_cost_inputs(
@@ -40,10 +38,9 @@ macro_rules! impl_measurement_for_instantiation_cost_type {
                         .unwrap(),
                     )
                 }
-                let module = Rc::new(
+                let module =
                     ParsedModule::new_with_isolated_engine(_host, &wasm, cost_inputs.clone())
-                        .unwrap(),
-                );
+                        .unwrap();
                 VmInstantiationSample {
                     id: Some(id),
                     wasm,
@@ -64,9 +61,7 @@ impl_measurement_for_instantiation_cost_type!(
 );
 
 // Protocol 21 cost models.
-#[cfg(feature = "next")]
 pub(crate) use v21::*;
-#[cfg(feature = "next")]
 mod v21 {
     use super::super::wasm_insn_exec::{
         wasm_module_with_n_data_segment_bytes, wasm_module_with_n_data_segments,

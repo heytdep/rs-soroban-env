@@ -1,11 +1,14 @@
-use super::parsed_module::{ParsedModule, VersionedContractCodeCostInputs};
+use super::{
+    func_info::HOST_FUNCTIONS,
+    parsed_module::{ParsedModule, VersionedContractCodeCostInputs},
+};
 use crate::{
     budget::{get_wasmi_config, AsBudget},
-    host::metered_clone::MeteredClone,
+    host::metered_clone::{MeteredClone, MeteredContainer},
     xdr::{Hash, ScErrorCode, ScErrorType},
     Host, HostError, MeteredOrdMap,
 };
-use std::rc::Rc;
+use std::{collections::BTreeSet, rc::Rc};
 use wasmi::Engine;
 
 /// A [ModuleCache] is a cache of a set of Wasm modules that have been parsed
@@ -27,22 +30,44 @@ impl ModuleCache {
         let config = get_wasmi_config(host.as_budget())?;
         let engine = Engine::new(&config);
         let modules = MeteredOrdMap::new();
-        #[allow(unused_mut)]
         let mut cache = Self { engine, modules };
-        #[cfg(feature = "next")]
         cache.add_stored_contracts(host)?;
         Ok(cache)
     }
 
-    #[cfg(feature = "next")]
     pub fn add_stored_contracts(&mut self, host: &Host) -> Result<(), HostError> {
         use crate::xdr::{ContractCodeEntry, ContractCodeEntryExt, LedgerEntryData, LedgerKey};
-        for (k, v) in host.try_borrow_storage()?.map.iter(host.as_budget())? {
+        let storage = host.try_borrow_storage()?;
+        for (k, v) in storage.map.iter(host.as_budget())? {
+            // In recording mode we build the module cache *after* the contract invocation has
+            // finished. This means that if any new Wasm has been uploaded, then we will add it to
+            // the cache. However, in the 'real' flow we build the cache first, so any new Wasm
+            // upload won't be cached. That's why we should look at the storage in its initial
+            // state, which is conveniently provided by the recording mode snapshot.
+            #[cfg(any(test, feature = "recording_mode"))]
+            let init_value = if host.in_storage_recording_mode()? {
+                storage.get_snapshot_value(host, k)?
+            } else {
+                v.clone()
+            };
+            #[cfg(any(test, feature = "recording_mode"))]
+            let v = &init_value;
+
             if let LedgerKey::ContractCode(_) = &**k {
                 if let Some((e, _)) = v {
                     if let LedgerEntryData::ContractCode(ContractCodeEntry { code, hash, ext }) =
                         &e.data
                     {
+                        // We allow empty contracts in testing mode; they exist
+                        // to exercise as much of the contract-code-storage
+                        // infrastructure as possible, while still redirecting
+                        // the actual execution into a `ContractFunctionSet`.
+                        // They should never be called, so we do not have to go
+                        // as far as making a fake `ParsedModule` for them.
+                        if cfg!(any(test, feature = "testutils")) && code.as_slice().is_empty() {
+                            continue;
+                        }
+
                         let code_cost_inputs = match ext {
                             ContractCodeEntryExt::V0 => VersionedContractCodeCostInputs::V0 {
                                 wasm_bytes: code.len(),
@@ -74,27 +99,54 @@ impl ModuleCache {
                 &[],
             ));
         }
-        let parsed_module = Rc::new(ParsedModule::new(host, &self.engine, &wasm, cost_inputs)?);
+        let parsed_module = ParsedModule::new(host, &self.engine, &wasm, cost_inputs)?;
         self.modules =
             self.modules
                 .insert(contract_id.metered_clone(host)?, parsed_module, host)?;
         Ok(())
     }
 
+    pub fn with_import_symbols<T>(
+        &self,
+        host: &Host,
+        callback: impl FnOnce(&BTreeSet<(&str, &str)>) -> Result<T, HostError>,
+    ) -> Result<T, HostError> {
+        let mut import_symbols = BTreeSet::new();
+        for module in self.modules.values(host)? {
+            module.with_import_symbols(host, |module_symbols| {
+                for hf in HOST_FUNCTIONS {
+                    let sym = (hf.mod_str, hf.fn_str);
+                    if module_symbols.contains(&sym) {
+                        import_symbols.insert(sym);
+                    }
+                }
+                Ok(())
+            })?;
+        }
+        // We approximate the cost of `BTreeSet` with the cost of initializng a
+        // `Vec` with the same elements, and we are doing it after the set has
+        // been created. The element count has been limited/charged during the
+        // parsing phase, so there is no DOS factor. We don't charge for
+        // insertion/lookups, since they should be cheap and number of
+        // operations on the set is limited (only used during `Linker`
+        // creation).
+        Vec::<(&str, &str)>::charge_bulk_init_cpy(import_symbols.len() as u64, host)?;
+        callback(&import_symbols)
+    }
+
+    pub fn make_linker(&self, host: &Host) -> Result<wasmi::Linker<Host>, HostError> {
+        self.with_import_symbols(host, |symbols| Host::make_linker(&self.engine, symbols))
+    }
+
     pub fn get_module(
         &self,
         host: &Host,
-        contract_id: &Hash,
-    ) -> Result<Rc<ParsedModule>, HostError> {
-        if let Some(m) = self.modules.get(contract_id, host)? {
-            return Ok(m.clone());
+        wasm_hash: &Hash,
+    ) -> Result<Option<Rc<ParsedModule>>, HostError> {
+        if let Some(m) = self.modules.get(wasm_hash, host)? {
+            Ok(Some(m.clone()))
         } else {
-            Err(host.err(
-                ScErrorType::Context,
-                ScErrorCode::InternalError,
-                "module cache missing contract",
-                &[],
-            ))
+            Ok(None)
         }
     }
 }

@@ -1,5 +1,5 @@
-#[cfg(feature = "next")]
-use crate::xdr::ContractCodeEntryExt;
+use crate::vm::ModuleCache;
+use crate::vm::ParsedModule;
 use crate::xdr::{
     AccountEntry, AccountEntryExt, AccountId, ContractCodeEntry, ContractDataDurability,
     ContractDataEntry, ContractExecutable, ContractIdPreimage, ContractIdPreimageFromAddress,
@@ -10,7 +10,8 @@ use crate::xdr::{
     SorobanAuthorizedFunction, SorobanAuthorizedInvocation, SorobanCredentials, Thresholds,
     Uint256, WriteXdr,
 };
-use crate::LedgerInfo;
+use crate::xdr::{ContractCodeEntryExt, ContractCodeEntryV1};
+use crate::{Host, LedgerInfo};
 use sha2::{Digest, Sha256};
 
 pub const DEFAULT_LEDGER_SEQ: u32 = 1_000_000;
@@ -47,20 +48,58 @@ pub fn bytes_sc_val(bytes: &[u8]) -> ScVal {
     ScVal::Bytes(ScBytes(bytes.try_into().unwrap()))
 }
 
-pub fn wasm_entry(wasm: &[u8]) -> LedgerEntry {
+/// Helper for creating a non-validated Wasm entry without refined
+/// cost inputs.
+/// Useful for tests that don't care about the Wasm entry contents.
+pub fn wasm_entry_non_validated(wasm: &[u8]) -> LedgerEntry {
+    let ext = ContractCodeEntryExt::V0;
+
     ledger_entry(LedgerEntryData::ContractCode(ContractCodeEntry {
-        #[cfg(not(feature = "next"))]
-        ext: ExtensionPoint::V0,
-        #[cfg(feature = "next")]
-        ext: ContractCodeEntryExt::V0,
+        ext,
         hash: get_wasm_hash(wasm).try_into().unwrap(),
         code: wasm.try_into().unwrap(),
     }))
 }
 
+/// Creates a ContractCode ledger entry containing the provided Wasm blob.
+/// The entry has the most 'up-to-date' contents possible (such as refined costs
+/// in protocol 21).
+pub fn wasm_entry(wasm: &[u8]) -> LedgerEntry {
+    wasm_entry_with_refined_contract_cost_inputs(
+        wasm,
+        e2e_test_protocol_version() >= ModuleCache::MIN_LEDGER_VERSION,
+    )
+}
+
+pub(crate) fn wasm_entry_with_refined_contract_cost_inputs(
+    wasm: &[u8],
+    add_refined_cost_inputs: bool,
+) -> LedgerEntry {
+    let ext = if !add_refined_cost_inputs {
+        ContractCodeEntryExt::V0
+    } else {
+        let dummy_host = crate::Host::test_host();
+        dummy_host.set_ledger_info(default_ledger_info()).unwrap();
+        ContractCodeEntryExt::V1(ContractCodeEntryV1 {
+            cost_inputs: ParsedModule::extract_refined_contract_cost_inputs(&dummy_host, wasm)
+                .unwrap(),
+            ext: ExtensionPoint::V0,
+        })
+    };
+    ledger_entry(LedgerEntryData::ContractCode(ContractCodeEntry {
+        ext,
+        hash: get_wasm_hash(wasm).try_into().unwrap(),
+        code: wasm.try_into().unwrap(),
+    }))
+}
+
+pub fn e2e_test_protocol_version() -> u32 {
+    Host::current_test_protocol()
+}
+
 pub fn default_ledger_info() -> LedgerInfo {
     LedgerInfo {
-        protocol_version: 20,
+        protocol_version: e2e_test_protocol_version(),
         sequence_number: DEFAULT_LEDGER_SEQ,
         timestamp: 12345678,
         network_id: DEFAULT_NETWORK_ID,
@@ -84,6 +123,17 @@ pub struct CreateContractData {
 
 impl CreateContractData {
     pub fn new(salt: [u8; 32], wasm: &[u8]) -> Self {
+        Self::new_with_refined_contract_cost_inputs(
+            salt,
+            wasm,
+            e2e_test_protocol_version() >= ModuleCache::MIN_LEDGER_VERSION,
+        )
+    }
+    pub fn new_with_refined_contract_cost_inputs(
+        salt: [u8; 32],
+        wasm: &[u8],
+        refined_cost_inputs: bool,
+    ) -> Self {
         let deployer = get_account_id([123; 32]);
         let contract_id_preimage = get_contract_id_preimage(&deployer, &salt);
 
@@ -114,10 +164,12 @@ impl CreateContractData {
             }),
         }));
 
+        let wasm_entry = wasm_entry_with_refined_contract_cost_inputs(wasm, refined_cost_inputs);
+
         Self {
             deployer,
             wasm_key: get_wasm_key(wasm),
-            wasm_entry: wasm_entry(wasm),
+            wasm_entry,
             contract_key,
             contract_entry,
             contract_address,

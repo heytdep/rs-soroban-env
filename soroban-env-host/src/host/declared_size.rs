@@ -1,5 +1,3 @@
-#[cfg(feature = "next")]
-use crate::xdr::{ContractCodeCostInputs, ContractCodeEntryV1};
 use crate::{
     auth::{
         AccountAuthorizationTracker, AccountAuthorizationTrackerSnapshot, AuthorizedInvocation,
@@ -14,14 +12,15 @@ use crate::{
     host_object::HostObject,
     storage::AccessType,
     xdr::{
-        AccountEntry, AccountId, Asset, BytesM, ContractCodeEntry, ContractDataDurability,
-        ContractEvent, ContractExecutable, ContractIdPreimage, CreateContractArgs, Duration,
-        ExtensionPoint, Hash, Int128Parts, Int256Parts, InvokeContractArgs, LedgerEntry,
-        LedgerEntryExt, LedgerKey, LedgerKeyAccount, LedgerKeyContractCode, LedgerKeyTrustLine,
-        PublicKey, ScAddress, ScBytes, ScContractInstance, ScError, ScMap, ScMapEntry, ScNonceKey,
-        ScString, ScSymbol, ScVal, ScVec, Signer, SorobanAuthorizationEntry,
-        SorobanAuthorizedFunction, SorobanAuthorizedInvocation, StringM, TimePoint, TrustLineAsset,
-        TrustLineEntry, TtlEntry, UInt128Parts, UInt256Parts, Uint256, SCSYMBOL_LIMIT,
+        AccountEntry, AccountId, Asset, BytesM, ContractCodeCostInputs, ContractCodeEntry,
+        ContractCodeEntryV1, ContractDataDurability, ContractEvent, ContractExecutable,
+        ContractIdPreimage, CreateContractArgs, Duration, ExtensionPoint, Hash, Int128Parts,
+        Int256Parts, InvokeContractArgs, LedgerEntry, LedgerEntryExt, LedgerKey, LedgerKeyAccount,
+        LedgerKeyContractCode, LedgerKeyTrustLine, PublicKey, ScAddress, ScBytes,
+        ScContractInstance, ScError, ScMap, ScMapEntry, ScNonceKey, ScString, ScSymbol, ScVal,
+        ScVec, Signer, SorobanAuthorizationEntry, SorobanAuthorizedFunction,
+        SorobanAuthorizedInvocation, StringM, TimePoint, TrustLineAsset, TrustLineEntry, TtlEntry,
+        UInt128Parts, UInt256Parts, Uint256, SCSYMBOL_LIMIT,
     },
     AddressObject, Bool, BytesObject, DurationObject, DurationSmall, DurationVal, Error, HostError,
     I128Object, I128Small, I128Val, I256Object, I256Small, I256Val, I32Val, I64Object, I64Small,
@@ -62,6 +61,7 @@ impl_declared_size_type!(i64, 8);
 impl_declared_size_type!(u128, 16);
 impl_declared_size_type!(i128, 16);
 impl_declared_size_type!(usize, 8);
+impl_declared_size_type!(&str, 16);
 
 // Val-wrapping types
 impl_declared_size_type!(Val, 8);
@@ -159,10 +159,8 @@ impl_declared_size_type!(LedgerKeyContractCode, 36);
 impl_declared_size_type!(LedgerEntryExt, 33);
 impl_declared_size_type!(AccountEntry, 216);
 impl_declared_size_type!(TrustLineEntry, 128);
-#[cfg(feature = "next")]
 impl_declared_size_type!(ContractCodeCostInputs, 40);
 impl_declared_size_type!(ContractCodeEntry, 64);
-#[cfg(feature = "next")]
 impl_declared_size_type!(ContractCodeEntryV1, 40);
 // TtlEntry must be declared as it's used in e2e to build
 // The TtlEntryMap, but is not otherwise cloned anywhere.
@@ -343,6 +341,7 @@ mod test {
         expect!["16"].assert_eq(size_of::<u128>().to_string().as_str());
         expect!["16"].assert_eq(size_of::<i128>().to_string().as_str());
         expect!["8"].assert_eq(size_of::<usize>().to_string().as_str());
+        expect!["16"].assert_eq(size_of::<&str>().to_string().as_str());
 
         // Val-wrapping types
         expect!["8"].assert_eq(size_of::<Val>().to_string().as_str());
@@ -474,16 +473,11 @@ mod test {
         expect!["33"].assert_eq(size_of::<LedgerEntryExt>().to_string().as_str());
         expect!["216"].assert_eq(size_of::<AccountEntry>().to_string().as_str());
         expect!["128"].assert_eq(size_of::<TrustLineEntry>().to_string().as_str());
-        #[cfg(feature = "next")]
         expect!["40"].assert_eq(size_of::<ContractCodeCostInputs>().to_string().as_str());
-        #[cfg(not(feature = "next"))]
-        expect!["56"].assert_eq(size_of::<ContractCodeEntry>().to_string().as_str());
         // ContractCodeEntry had an ExtensionPoint added to it and is now 40
         // bytes larger than its original size (and for some reason its declared
         // size was 64 bytes, even though its original size wasonly 56 bytes)
-        #[cfg(feature = "next")]
         expect!["104"].assert_eq(size_of::<ContractCodeEntry>().to_string().as_str());
-        #[cfg(feature = "next")]
         expect!["40"].assert_eq(size_of::<ContractCodeEntryV1>().to_string().as_str());
         expect!["36"].assert_eq(size_of::<TtlEntry>().to_string().as_str());
 
@@ -574,6 +568,7 @@ mod test {
         assert_mem_size_le_declared_size!(u128);
         assert_mem_size_le_declared_size!(i128);
         assert_mem_size_le_declared_size!(usize);
+        assert_mem_size_le_declared_size!(&str);
 
         // Val-wrapping types
         assert_mem_size_le_declared_size!(Val);
@@ -671,13 +666,8 @@ mod test {
         assert_mem_size_le_declared_size!(LedgerEntryExt);
         assert_mem_size_le_declared_size!(AccountEntry);
         assert_mem_size_le_declared_size!(TrustLineEntry);
-        #[cfg(feature = "next")]
         assert_mem_size_le_declared_size!(ContractCodeCostInputs);
-        #[cfg(not(feature = "next"))]
-        assert_mem_size_le_declared_size!(ContractCodeEntry);
-        #[cfg(feature = "next")]
         assert_mem_size_le_declared_size!(ContractCodeEntry, ContractCodeEntryV1);
-        #[cfg(feature = "next")]
         assert_mem_size_le_declared_size!(ContractCodeEntryV1);
         assert_mem_size_le_declared_size!(TtlEntry);
         assert_mem_size_le_declared_size!(LedgerKey);

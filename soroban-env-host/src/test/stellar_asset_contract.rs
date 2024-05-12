@@ -1,9 +1,9 @@
 use std::{convert::TryInto, rc::Rc};
 
 use crate::builtin_contracts::base_types::BytesN;
+use crate::testutils::simple_account_sign_fn;
 use crate::{
     auth::RecordedAuthPayload,
-    budget::AsBudget,
     builtin_contracts::{
         base_types::Address,
         contract_error::ContractError,
@@ -52,10 +52,9 @@ impl StellarAssetContractTest {
     fn setup(testname: &'static str) -> Self {
         let host = Host::test_host_with_recording_footprint();
         let obs = ObservedHost::new(testname, host.clone());
+        let protocol_version = host.get_ledger_protocol_version().unwrap();
         host.set_ledger_info(LedgerInfo {
-            protocol_version: crate::meta::get_ledger_protocol_version(
-                crate::meta::INTERFACE_VERSION,
-            ),
+            protocol_version,
             sequence_number: 123,
             timestamp: 123456,
             network_id: [5; 32],
@@ -146,10 +145,12 @@ impl StellarAssetContractTest {
 
     fn get_trustline_balance(&self, key: &Rc<LedgerKey>) -> i64 {
         self.host
-            .with_mut_storage(|s| match &s.get(key, self.host.as_budget()).unwrap().data {
-                LedgerEntryData::Trustline(trustline) => Ok(trustline.balance),
-                _ => unreachable!(),
-            })
+            .with_mut_storage(
+                |s| match &s.get_with_host(key, &self.host, None).unwrap().data {
+                    LedgerEntryData::Trustline(trustline) => Ok(trustline.balance),
+                    _ => unreachable!(),
+                },
+            )
             .unwrap()
     }
     #[allow(clippy::too_many_arguments)]
@@ -182,7 +183,7 @@ impl StellarAssetContractTest {
     fn update_account_flags(&self, key: &Rc<LedgerKey>, new_flags: u32) {
         self.host
             .with_mut_storage(|s| {
-                let entry = s.get(key, self.host.as_budget()).unwrap();
+                let entry = s.get_with_host(key, &self.host, None).unwrap();
                 match entry.data.clone() {
                     LedgerEntryData::Account(mut account) => {
                         account.flags = new_flags;
@@ -191,7 +192,7 @@ impl StellarAssetContractTest {
                             &entry,
                             LedgerEntryData::Account(account),
                         )?;
-                        s.put(key, &update, None, self.host.as_budget())
+                        s.put_with_host(key, &update, None, &self.host, None)
                     }
                     _ => unreachable!(),
                 }
@@ -260,7 +261,7 @@ impl StellarAssetContractTest {
     fn update_trustline_flags(&self, key: &Rc<LedgerKey>, new_flags: u32) {
         self.host
             .with_mut_storage(|s| {
-                let entry = s.get(key, self.host.as_budget()).unwrap();
+                let entry = s.get_with_host(key, &self.host, None).unwrap();
                 match entry.data.clone() {
                     LedgerEntryData::Trustline(mut trustline) => {
                         trustline.flags = new_flags;
@@ -269,7 +270,7 @@ impl StellarAssetContractTest {
                             &entry,
                             LedgerEntryData::Trustline(trustline),
                         )?;
-                        s.put(key, &update, None, self.host.as_budget())
+                        s.put_with_host(key, &update, None, &self.host, None)
                     }
                     _ => unreachable!(),
                 }
@@ -2944,15 +2945,6 @@ fn test_classic_transfers_not_possible_for_unauthorized_asset() {
     assert_eq!(test.get_trustline_balance(&trustline_key), 100_000_000);
 }
 
-#[allow(clippy::type_complexity)]
-fn simple_account_sign_fn<'a>(
-    host: &'a Host,
-    kp: &'a SigningKey,
-) -> Box<dyn Fn(&[u8]) -> Val + 'a> {
-    use crate::builtin_contracts::testutils::sign_payload_for_ed25519;
-    Box::new(|payload: &[u8]| -> Val { sign_payload_for_ed25519(host, kp, payload).into() })
-}
-
 #[test]
 fn test_custom_account_auth() {
     let test = StellarAssetContractTest::setup(function_name!());
@@ -3051,7 +3043,7 @@ fn test_custom_account_auth() {
             let key = test.host.contract_instance_ledger_key(&contract_id)?;
             // Note, that this represents 'correct footprint, missing value' scenario.
             // Incorrect footprint scenario is not covered (it's not auth specific).
-            storage.del(&key, test.host.budget_ref())
+            storage.del_with_host(&key, &test.host, None)
         })
         .unwrap();
 
