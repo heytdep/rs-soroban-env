@@ -157,8 +157,11 @@ impl LedgerEntryUpdater {
     }
 }
 
+
 enum SnapshotSourceHolder<'a> {
     Ref(&'a dyn SnapshotSource),
+    
+    #[allow(dead_code)]
     Rc(Rc<dyn SnapshotSource>),
 }
 
@@ -199,6 +202,7 @@ impl<'a> SimulationSnapshotSource<'a> {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn new_from_rc(snapshot: Rc<dyn SnapshotSource>) -> Self {
         Self {
             inner_snapshot: SnapshotSourceHolder::Rc(snapshot),

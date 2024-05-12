@@ -17,10 +17,9 @@ use crate::{
         LedgerEntryData, PublicKey, ScAddress, ScBytes, ScErrorCode, ScErrorType, ScString,
         ScSymbol, ScVal, TimePoint, Uint256,
     },
-    AddressObject, Bool, BytesObject, Compare, ConversionError, EnvBase, Error, I128Object,
-    I256Object, LedgerInfo, MapObject, Object, StorageType, StringObject, Symbol, SymbolObject,
-    TryFromVal, U128Object, U256Object, U32Val, U64Val, Val, VecObject, VmCaller, VmCallerEnv,
-    Void, I256, U256,
+    AddressObject, Bool, BytesObject, Compare, ConversionError, EnvBase, Error, LedgerInfo,
+    MapObject, Object, StorageType, StringObject, Symbol, SymbolObject, TryFromVal, Val, VecObject,
+    VmCaller, VmCallerEnv, Void,
 };
 
 mod comparison;
@@ -55,6 +54,7 @@ use self::{
     prng::Prng,
 };
 
+use crate::host::error::TryBorrowOrErr;
 #[cfg(any(test, feature = "testutils"))]
 pub use frame::ContractFunctionSet;
 pub(crate) use frame::Frame;
@@ -81,6 +81,7 @@ pub struct CoverageScoreboard {
 #[derive(Clone, Default)]
 struct HostImpl {
     module_cache: RefCell<Option<ModuleCache>>,
+    shared_linker: RefCell<Option<wasmi::Linker<Host>>>,
     source_account: RefCell<Option<AccountId>>,
     ledger: RefCell<Option<LedgerInfo>>,
     objects: RefCell<Vec<HostObject>>,
@@ -151,6 +152,14 @@ struct HostImpl {
     #[doc(hidden)]
     #[cfg(any(test, feature = "recording_mode"))]
     suppress_diagnostic_events: RefCell<bool>,
+
+    // This flag marks the call of `build_module_cache` that would happen
+    // in enforcing mode. In recording mode we need to use this flag to
+    // determine whether we need to rebuild module cache after the host
+    // invocation has been done.
+    #[doc(hidden)]
+    #[cfg(any(test, feature = "recording_mode"))]
+    need_to_build_module_cache: RefCell<bool>,
 }
 
 // Host is a newtype on Rc<HostImpl> so we can impl Env for it below.
@@ -193,6 +202,12 @@ impl_checked_borrow_helpers!(
     Option<ModuleCache>,
     try_borrow_module_cache,
     try_borrow_module_cache_mut
+);
+impl_checked_borrow_helpers!(
+    shared_linker,
+    Option<wasmi::Linker<Host>>,
+    try_borrow_linker,
+    try_borrow_linker_mut
 );
 impl_checked_borrow_helpers!(
     source_account,
@@ -300,6 +315,14 @@ impl_checked_borrow_helpers!(
     bool,
     try_borrow_suppress_diagnostic_events,
     try_borrow_suppress_diagnostic_events_mut
+);
+
+#[cfg(any(test, feature = "recording_mode"))]
+impl_checked_borrow_helpers!(
+    need_to_build_module_cache,
+    bool,
+    try_borrow_need_to_build_module_cache,
+    try_borrow_need_to_build_module_cache_mut
 );
 
 impl Debug for HostImpl {
@@ -491,6 +514,7 @@ impl Host {
         let _client = tracy_client::Client::start();
         Self(Rc::new(HostImpl {
             module_cache: RefCell::new(None),
+            shared_linker: RefCell::new(None),
             source_account: RefCell::new(None),
             ledger: RefCell::new(None),
             objects: Default::default(),
@@ -518,16 +542,43 @@ impl Host {
             coverage_scoreboard: Default::default(),
             #[cfg(any(test, feature = "recording_mode"))]
             suppress_diagnostic_events: RefCell::new(false),
+            #[cfg(any(test, feature = "recording_mode"))]
+            need_to_build_module_cache: RefCell::new(false),
         }))
     }
 
-    pub fn maybe_add_module_cache(&self) -> Result<(), HostError> {
-        if cfg!(feature = "next")
-            && self.get_ledger_protocol_version()? >= ModuleCache::MIN_LEDGER_VERSION
+    pub fn build_module_cache_if_needed(&self) -> Result<(), HostError> {
+        if self.get_ledger_protocol_version()? >= ModuleCache::MIN_LEDGER_VERSION
+            && self.try_borrow_module_cache()?.is_none()
         {
-            *self.try_borrow_module_cache_mut()? = Some(ModuleCache::new(self)?);
+            let cache = ModuleCache::new(self)?;
+            let linker = cache.make_linker(self)?;
+            *self.try_borrow_module_cache_mut()? = Some(cache);
+            *self.try_borrow_linker_mut()? = Some(linker);
         }
         Ok(())
+    }
+
+    #[cfg(any(test, feature = "recording_mode"))]
+    pub fn in_storage_recording_mode(&self) -> Result<bool, HostError> {
+        if let crate::storage::FootprintMode::Recording(_) = self.try_borrow_storage()?.mode {
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    #[cfg(any(test, feature = "recording_mode"))]
+    pub fn clear_module_cache(&self) -> Result<(), HostError> {
+        *self.try_borrow_module_cache_mut()? = None;
+        *self.try_borrow_linker_mut()? = None;
+        Ok(())
+    }
+
+    #[cfg(any(test, feature = "recording_mode"))]
+    pub fn rebuild_module_cache(&self) -> Result<(), HostError> {
+        self.clear_module_cache()?;
+        self.build_module_cache_if_needed()
     }
 
     pub fn set_source_account(&self, source_account: AccountId) -> Result<(), HostError> {
@@ -590,6 +641,14 @@ impl Host {
         } else {
             Ok(None)
         }
+    }
+
+    #[cfg(any(test, feature = "recording_mode"))]
+    pub fn switch_to_enforcing_storage(&self) -> Result<(), HostError> {
+        self.with_mut_storage(|storage| {
+            storage.mode = crate::storage::FootprintMode::Enforcing;
+            Ok(())
+        })
     }
 
     #[cfg(any(test, feature = "recording_mode"))]
@@ -694,7 +753,6 @@ impl Host {
     }
 
     pub fn set_diagnostic_level(&self, diagnostic_level: DiagnosticLevel) -> Result<(), HostError> {
-        use crate::host::error::TryBorrowOrErr;
         *self.0.diagnostic_level.try_borrow_mut_or_err()? = diagnostic_level;
         Ok(())
     }
@@ -727,7 +785,6 @@ impl Host {
     where
         F: FnOnce() -> Result<(), HostError>,
     {
-        use crate::host::error::TryBorrowOrErr;
         if let Ok(cell) = self.0.diagnostic_level.try_borrow_or_err() {
             if matches!(*cell, DiagnosticLevel::Debug) {
                 return self.budget_ref().with_shadow_mode(f);
@@ -2139,8 +2196,7 @@ impl VmCallerEnv for Host {
             StorageType::Temporary | StorageType::Persistent => {
                 let key = self.storage_key_from_val(k, t.try_into()?)?;
                 self.try_borrow_storage_mut()?
-                    .has(&key, self.as_budget())
-                    .map_err(|e| self.decorate_contract_data_storage_error(e, k))?
+                    .has_with_host(&key, self, Some(k))?
             }
             StorageType::Instance => {
                 self.with_instance_storage(|s| Ok(s.map.get(&k, self)?.is_some()))?
@@ -2162,8 +2218,7 @@ impl VmCallerEnv for Host {
                 let key = self.storage_key_from_val(k, t.try_into()?)?;
                 let entry = self
                     .try_borrow_storage_mut()?
-                    .get(&key, self.as_budget())
-                    .map_err(|e| self.decorate_contract_data_storage_error(e, k))?;
+                    .get_with_host(&key, self, Some(k))?;
                 match &entry.data {
                     LedgerEntryData::ContractData(e) => Ok(self.to_valid_host_val(&e.val)?),
                     _ => Err(self.err(
@@ -2201,8 +2256,7 @@ impl VmCallerEnv for Host {
             StorageType::Temporary | StorageType::Persistent => {
                 let key = self.storage_key_from_val(k, t.try_into()?)?;
                 self.try_borrow_storage_mut()?
-                    .del(&key, self.as_budget())
-                    .map_err(|e| self.decorate_contract_data_storage_error(e, k))?;
+                    .del_with_host(&key, self, Some(k))?;
             }
             StorageType::Instance => {
                 self.with_mut_instance_storage(|s| {
@@ -2235,9 +2289,13 @@ impl VmCallerEnv for Host {
             ))?;
         }
         let key = self.storage_key_from_val(k, t.try_into()?)?;
-        self.try_borrow_storage_mut()?
-            .extend_ttl(self, key, threshold.into(), extend_to.into())
-            .map_err(|e| self.decorate_contract_data_storage_error(e, k))?;
+        self.try_borrow_storage_mut()?.extend_ttl(
+            self,
+            key,
+            threshold.into(),
+            extend_to.into(),
+            Some(k),
+        )?;
         Ok(Val::VOID)
     }
 
@@ -2250,7 +2308,6 @@ impl VmCallerEnv for Host {
         let contract_id = self.get_current_contract_id_internal()?;
         let key = self.contract_instance_ledger_key(&contract_id)?;
         self.extend_contract_instance_ttl_from_contract_id(
-            &contract_id,
             key.clone(),
             threshold.into(),
             extend_to.into(),
@@ -2270,7 +2327,6 @@ impl VmCallerEnv for Host {
         let key = self.contract_instance_ledger_key(&contract_id)?;
 
         self.extend_contract_instance_ttl_from_contract_id(
-            &contract_id,
             key,
             threshold.into(),
             extend_to.into(),
@@ -2289,7 +2345,6 @@ impl VmCallerEnv for Host {
         let contract_id = self.contract_id_from_address(contract)?;
         let key = self.contract_instance_ledger_key(&contract_id)?;
         self.extend_contract_instance_ttl_from_contract_id(
-            &contract_id,
             key.clone(),
             threshold.into(),
             extend_to.into(),
@@ -2947,10 +3002,25 @@ impl VmCallerEnv for Host {
         signature: BytesObject,
         recovery_id: U32Val,
     ) -> Result<BytesObject, HostError> {
-        let sig = self.secp256k1_signature_from_bytesobj_input(signature)?;
+        let sig = self.ecdsa_signature_from_bytesobj_input::<k256::Secp256k1>(signature)?;
         let rid = self.secp256k1_recovery_id_from_u32val(recovery_id)?;
         let hash = self.hash_from_bytesobj_input("msg_digest", msg_digest)?;
-        self.recover_key_ecdsa_secp256k1_internal(&hash, &sig, rid)
+        let rk = self.recover_key_ecdsa_secp256k1_internal(&hash, &sig, rid)?;
+        self.add_host_object(rk)
+    }
+
+    fn verify_sig_ecdsa_secp256r1(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        public_key: BytesObject,
+        msg_digest: BytesObject,
+        signature: BytesObject,
+    ) -> Result<Void, HostError> {
+        let pk = self.secp256r1_public_key_from_bytesobj_input(public_key)?;
+        let sig = self.ecdsa_signature_from_bytesobj_input::<p256::NistP256>(signature)?;
+        let msg_hash = self.hash_from_bytesobj_input("msg_digest", msg_digest)?;
+        let res = self.secp256r1_verify_signature(&pk, &msg_hash, &sig)?;
+        Ok(res.into())
     }
 
     // endregion: "crypto" module functions
@@ -3224,6 +3294,99 @@ impl Host {
         F: FnOnce(Budget) -> Result<T, HostError>,
     {
         f(self.0.budget.clone())
+    }
+
+    /// Returns the ledger number until a contract with given address lives
+    /// (inclusive).
+    pub fn get_contract_instance_live_until_ledger(
+        &self,
+        contract: AddressObject,
+    ) -> Result<u32, HostError> {
+        let contract_id = self.contract_id_from_address(contract)?;
+        let key = self.contract_instance_ledger_key(&contract_id)?;
+        let (_, live_until) = self
+            .try_borrow_storage_mut()?
+            .get_with_live_until_ledger(&key, self, None)?;
+        live_until.ok_or_else(|| {
+            self.err(
+                ScErrorType::Storage,
+                ScErrorCode::InternalError,
+                "unexpected contract instance without TTL",
+                &[contract.into()],
+            )
+        })
+    }
+
+    /// Returns the ledger number until contract code entry for contract with
+    /// given address lives (inclusive).
+    pub fn get_contract_code_live_until_ledger(
+        &self,
+        contract: AddressObject,
+    ) -> Result<u32, HostError> {
+        let contract_id = self.contract_id_from_address(contract)?;
+        let key = self.contract_instance_ledger_key(&contract_id)?;
+        match self
+            .retrieve_contract_instance_from_storage(&key)?
+            .executable
+        {
+            ContractExecutable::Wasm(wasm_hash) => {
+                let key = self.contract_code_ledger_key(&wasm_hash)?;
+                let (_, live_until) = self
+                    .try_borrow_storage_mut()?
+                    .get_with_live_until_ledger(&key, self, None)?;
+                live_until.ok_or_else(|| {
+                    self.err(
+                        ScErrorType::Storage,
+                        ScErrorCode::InternalError,
+                        "unexpected contract code without TTL for a contract",
+                        &[contract.into()],
+                    )
+                })
+            }
+            ContractExecutable::StellarAsset => Err(self.err(
+                ScErrorType::Storage,
+                ScErrorCode::InvalidInput,
+                "Stellar Asset Contracts don't have contract code",
+                &[],
+            )),
+        }
+    }
+
+    /// Returns the ledger number until a current contract's data entry
+    /// with given key and storage type lives (inclusive).
+    /// Instance storage type is not supported by this function, use
+    /// `get_contract_instance_live_until_ledger` instead.
+    pub fn get_contract_data_live_until_ledger(
+        &self,
+        key: Val,
+        storage_type: StorageType,
+    ) -> Result<u32, HostError> {
+        let ledger_key = match storage_type {
+            StorageType::Temporary | StorageType::Persistent => {
+                self.storage_key_from_val(key, storage_type.try_into()?)?
+            }
+            StorageType::Instance => {
+                return Err(self.err(
+                    ScErrorType::Storage,
+                    ScErrorCode::InvalidAction,
+                    "`get_contract_data_live_until_ledger` doesn't support instance storage, use `get_contract_instance_live_until_ledger` instead.",
+                    &[],
+                ));
+            }
+        };
+        let (_, live_until) = self.try_borrow_storage_mut()?.get_with_live_until_ledger(
+            &ledger_key,
+            self,
+            Some(key),
+        )?;
+        live_until.ok_or_else(|| {
+            self.err(
+                ScErrorType::Storage,
+                ScErrorCode::InternalError,
+                "unexpected contract data without TTL",
+                &[key],
+            )
+        })
     }
 }
 

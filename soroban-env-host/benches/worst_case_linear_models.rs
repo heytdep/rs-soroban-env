@@ -230,7 +230,7 @@ fn write_budget_params_code(
                         cpu.const_term, cpu.lin_term
                     ),
                     None => println!(
-                        "ContractCostType::VmCachedInstantiation => !todo()"
+                        "ContractCostType::VmCachedInstantiation => todo!()"
                     ),
                 }
             }
@@ -239,7 +239,7 @@ fn write_budget_params_code(
                     "ContractCostType::{:?} => {{ cpu.const_term = {}; cpu.lin_term = {:?}; }}",
                     ty, cpu.const_term, cpu.lin_term
                 ),
-                None => println!("ContractCostType::VmCachedInstantiation => !todo()"),
+                None => println!("ContractCostType::{:?} => todo!()", ty),
             },
         }
     }
@@ -305,7 +305,7 @@ fn write_budget_params_code(
                         mem.const_term, mem.lin_term
                     ),
                     None => println!(
-                        "ContractCostType::VmCachedInstantiation => !todo()"
+                        "ContractCostType::VmCachedInstantiation => todo!()"
                     ),
                 }
             }
@@ -314,7 +314,7 @@ fn write_budget_params_code(
                     "ContractCostType::{:?} => {{ mem.const_term = {}; mem.lin_term = {:?}; }}",
                     ty, mem.const_term, mem.lin_term
                 ),
-                None => println!("ContractCostType::VmCachedInstantiation => !todo()"),
+                None => println!("ContractCostType::{:?} => todo!()", ty),
             },
         }
     }
