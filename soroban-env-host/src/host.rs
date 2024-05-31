@@ -493,6 +493,39 @@ impl Host {
             Some(idx) => Ok(U32Val::from(idx)),
         }
     }
+
+    pub fn vec_unpack_to_linear_memory_mem<M: CustomContextVM>(
+        &self,
+        m: &mut M,
+        vec: VecObject,
+        vals_pos: U32Val,
+        len: U32Val,
+    ) -> Result<Void, HostError> {
+        let MemFnArgsCustomVmMut { mem, pos, len } = self.get_mem_fn_args_custom_vm_mut(m, vals_pos, len);
+        self.visit_obj(vec, |vecobj: &HostVec| {
+            if vecobj.len() != len as usize {
+                return Err(self.err(
+                    ScErrorType::Object,
+                    ScErrorCode::UnexpectedSize,
+                    "differing host vector and output vector lengths when unpacking vec to linear memory",
+                    &[],
+                ));
+            }
+            // charges memcpy of converting vec entries into bytes
+            self.charge_budget(ContractCostType::MemCpy, Some((len as u64).saturating_mul(8)))?;
+            self.metered_vm_write_vals_to_linear_memory_mem(
+                mem,
+                pos,
+                vecobj.as_slice(),
+                |x| {
+                    Ok(u64::to_le_bytes(
+                        self.absolute_to_relative(*x)?.get_payload(),
+                    ))
+                },
+            )
+        })?;
+        Ok(Val::VOID)
+    }
 /* 
     pub fn bytes_copy_to_linear_memory_mem<M: CustomContextVM>(
         &self,
