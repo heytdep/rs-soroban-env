@@ -22,6 +22,7 @@ use crate::{
     VmCaller, VmCallerEnv, Void,
 };
 
+mod bls12_377;
 mod comparison;
 mod conversion;
 pub(crate) mod crypto;
