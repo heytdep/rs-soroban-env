@@ -1,17 +1,15 @@
 //! Pairings for Bls12-377 elliptic curves.
+#![allow(dead_code)]
 
 use std::str::FromStr;
 
 use ark_bls12_377::{Bls12_377, Fq12Parameters, G1Affine, G2Affine};
 use ark_ec::PairingEngine;
-use ark_ff::{Fp12ParamsWrapper, Fp384, Fp384Parameters, QuadExtField};
+use ark_ff::{Fp12ParamsWrapper, Fp384, QuadExtField};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use crate::xdr::{ScError, ScErrorCode};
 //use ark_ff::bytes::ToBytes;
 //use ark_serialize::*;
-use ark_std::{
-    //io::{Result as IoResult},
-    vec::Vec,
-};
-use stellar_xdr::curr::{ScError, ScErrorCode};
 
 use crate::{Host, HostError};
 
@@ -62,10 +60,16 @@ impl CurveWrapper {
 }
 
 impl Host {
-    pub(crate) fn bls12_377_pairing(&self, p: [&str; 2], q: [&str; 4]) -> Result<String, HostError> {
+    pub(crate) fn bls12_377_pairing(&self, p: [&str; 2], q: [&str; 4]) -> Result<Vec<u8>, HostError> {
         let wrapper = CurveWrapper::build(p, q)?;
-        let result = wrapper.pair().to_string();
+        let result = wrapper.pair();
+        let mut writer = Vec::new();
+        let result = result.serialize(&mut writer).map_err(|_| to_host_error(()))?;
         
-        Ok(result)
+        Ok(writer)
+    }
+
+    pub(crate) fn quad_ext_fields_mul(&self, a: &str, b: &str) -> Result<String, HostError> {
+        let a: QuadExtField<Fp12ParamsWrapper<Fq12Parameters>> = QuadExtField::deserialize(a).map_err(|_| to_host_error(()))?;
     }
 }
