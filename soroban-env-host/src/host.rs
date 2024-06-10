@@ -2194,6 +2194,40 @@ impl VmCallerEnv for Host {
         Ok(Val::VOID)
     }
 
+    fn bls12_377_pairing(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        p0: BytesObject,
+        p1: BytesObject,
+        c0: BytesObject,
+        c1: BytesObject,
+        c2: BytesObject,
+        c3: BytesObject,
+    ) -> Result<BytesObject, Self::Error> {
+        let p0 = self.field_from_bytesobj_input(p0)?;
+        let p1 = self.field_from_bytesobj_input(p1)?;        
+        let c0 = self.field_from_bytesobj_input(c0)?;
+        let c1 = self.field_from_bytesobj_input(c1)?;
+        let c2 = self.field_from_bytesobj_input(c2)?;
+        let c3 = self.field_from_bytesobj_input(c3)?;
+
+        let result = self.inner_bls12_377_pairing([p0, p1], [c0, c1, c2, c3])?;
+        self.add_host_object(self.scbytes_from_vec(result)?)
+    }
+
+    fn quad_ext_fields_mul(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        a: BytesObject,
+        b: BytesObject,
+    ) -> Result<BytesObject, Self::Error> {
+        let a = self.field_from_bytesobj_input(a)?;
+        let b: Vec<u8> = self.field_from_bytesobj_input(b)?;        
+
+        let result = self.inner_quad_ext_fields_mul(a, b)?;
+        self.add_host_object(self.scbytes_from_vec(result)?)
+    }
+
     // Notes on metering: covered by the components.
     fn create_contract(
         &self,

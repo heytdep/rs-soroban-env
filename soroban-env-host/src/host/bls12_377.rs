@@ -1,13 +1,14 @@
 //! Pairings for Bls12-377 elliptic curves.
 #![allow(dead_code)]
 
-use std::str::FromStr;
+use std::ops::MulAssign;
 
 use ark_bls12_377::{Bls12_377, Fq12Parameters, G1Affine, G2Affine};
 use ark_ec::PairingEngine;
 use ark_ff::{Fp12ParamsWrapper, Fp384, QuadExtField};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use crate::xdr::{ScError, ScErrorCode};
+use soroban_env_common::BytesObject;
+use crate::xdr::{ScError, ScErrorCode, ScBytes};
 //use ark_ff::bytes::ToBytes;
 //use ark_serialize::*;
 
@@ -26,17 +27,17 @@ fn to_host_error(_: ()) -> HostError {
 }
 
 impl CurveWrapper {
-    fn to_affine_g1(x: &str, y: &str) -> Result<G1Affine, HostError> {
-        let x = Fp384::from_str(x).map_err(to_host_error)?;
-        let y = Fp384::from_str(y).map_err(to_host_error)?;
+    fn to_affine_g1(x: Vec<u8>, y: Vec<u8>) -> Result<G1Affine, HostError> {
+        let x = Fp384::deserialize(x.as_slice()).map_err(|_| to_host_error(()))?;
+        let y = Fp384::deserialize(y.as_slice()).map_err(|_| to_host_error(()))?;
         Ok(G1Affine::new(x, y, INFINITY))
     }
 
-    fn to_affine_g2(x_0: &str, y_0: &str, x_1: &str, y_1: &str) -> Result<G2Affine, HostError> {
-        let x_0 = Fp384::from_str(x_0).map_err(to_host_error)?;
-        let x_1 = Fp384::from_str(x_1).map_err(to_host_error)?;
-        let y_0 = Fp384::from_str(y_0).map_err(to_host_error)?;
-        let y_1 = Fp384::from_str(y_1).map_err(to_host_error)?;
+    fn to_affine_g2(x_0: Vec<u8>, y_0: Vec<u8>, x_1: Vec<u8>, y_1: Vec<u8>) -> Result<G2Affine, HostError> {
+        let x_0 = Fp384::deserialize(x_0.as_slice()).map_err(|_| to_host_error(()))?;
+        let x_1 = Fp384::deserialize(x_1.as_slice()).map_err(|_| to_host_error(()))?;
+        let y_0 = Fp384::deserialize(y_0.as_slice()).map_err(|_| to_host_error(()))?;
+        let y_1 = Fp384::deserialize(y_1.as_slice()).map_err(|_| to_host_error(()))?;
         let x = QuadExtField::new(x_0, y_0);
         let y = QuadExtField::new(x_1, y_1);
         Ok(G2Affine::new(x, y, INFINITY))
@@ -44,7 +45,7 @@ impl CurveWrapper {
 
     // Note: for safety it might be better to express arguments with their own structure
     // to avoid confusion in the future.
-    fn build(p: [&str; 2], q: [&str; 4]) -> Result<Self, HostError> {
+    fn build(p: [Vec<u8>; 2], q: [Vec<u8>; 4]) -> Result<Self, HostError> {
         let p = Self::to_affine_g1(p[0], p[1])?;
         let q = Self::to_affine_g2(q[0], q[1], q[2], q[3])?;
 
@@ -60,16 +61,29 @@ impl CurveWrapper {
 }
 
 impl Host {
-    pub(crate) fn bls12_377_pairing(&self, p: [&str; 2], q: [&str; 4]) -> Result<Vec<u8>, HostError> {
+    pub(crate) fn field_from_bytesobj_input(&self, fp: BytesObject) -> Result<Vec<u8>, HostError> {
+        self.visit_obj(fp, |bytes: &ScBytes| {
+            Ok(bytes.0.to_vec())
+        })
+    }
+    
+    pub(crate) fn inner_bls12_377_pairing(&self, p: [Vec<u8>; 2], q: [Vec<u8>; 4]) -> Result<Vec<u8>, HostError> {
         let wrapper = CurveWrapper::build(p, q)?;
         let result = wrapper.pair();
         let mut writer = Vec::new();
-        let result = result.serialize(&mut writer).map_err(|_| to_host_error(()))?;
+        result.serialize(&mut writer).map_err(|_| to_host_error(()))?;
         
         Ok(writer)
     }
 
-    pub(crate) fn quad_ext_fields_mul(&self, a: &str, b: &str) -> Result<String, HostError> {
-        let a: QuadExtField<Fp12ParamsWrapper<Fq12Parameters>> = QuadExtField::deserialize(a).map_err(|_| to_host_error(()))?;
+    pub(crate) fn inner_quad_ext_fields_mul(&self, a: Vec<u8>, b: Vec<u8>) -> Result<Vec<u8>, HostError> {
+        let mut lhs: QuadExtField<Fp12ParamsWrapper<Fq12Parameters>> = QuadExtField::deserialize(a.as_slice()).map_err(|_| to_host_error(()))?;
+        let rhs: QuadExtField<Fp12ParamsWrapper<Fq12Parameters>> = QuadExtField::deserialize(b.as_slice()).map_err(|_| to_host_error(()))?;
+        lhs.mul_assign(rhs);
+
+        let mut writer = Vec::new();
+        lhs.serialize(&mut writer).map_err(|_| to_host_error(()))?;
+
+        Ok(writer)
     }
 }

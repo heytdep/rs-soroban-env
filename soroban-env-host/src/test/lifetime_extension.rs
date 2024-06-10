@@ -5,7 +5,7 @@ use soroban_test_wasms::CONTRACT_STORAGE;
 
 use crate::Host;
 
-struct InstanceCodeTest {
+pub(crate) struct InstanceCodeTest {
     host: Host,
     contract_id: AddressObject,
     contract: Hash,
@@ -14,7 +14,7 @@ struct InstanceCodeTest {
 
 impl InstanceCodeTest {
     // We can potentially add some customizability for the ledger here.
-    fn setup() -> Self {
+    pub(crate) fn setup() -> Self {
         let host = Host::test_host_with_recording_footprint();
         let contract_id = host.register_test_contract_wasm(CONTRACT_STORAGE);
         let hash = host.contract_id_from_address(contract_id).unwrap();

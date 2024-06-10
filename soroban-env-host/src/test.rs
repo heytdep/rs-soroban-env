@@ -1,6 +1,7 @@
 pub(crate) mod observe;
 
 mod address;
+mod bls12_377;
 mod auth;
 mod basic;
 mod budget_metering;
