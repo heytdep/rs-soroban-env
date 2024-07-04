@@ -96,6 +96,18 @@ impl Host {
         )
     }
 
+    pub(crate) fn metered_vm_write_bytes_to_linear_memory_mem<M: CustomContextVM>(
+        &self,
+        m: &mut M,
+        mem_pos: u32,
+        buf: &[u8],
+    ) -> Result<(), HostError> {
+        self.charge_budget(ContractCostType::MemCpy, Some(buf.len() as u64))?;
+        m.write(mem_pos, buf);
+        
+        Ok(())
+    }
+
     pub(crate) fn metered_vm_read_bytes_from_linear_memory(
         &self,
         vmcaller: &mut VmCaller<Host>,
@@ -497,6 +509,20 @@ impl Host {
         let MemFnArgs { vm, pos, len } = self.get_mem_fn_args(lm_pos, len)?;
         self.memobj_visit_and_copy_bytes_out::<HOT>(obj, obj_pos, len, |obj_buf| {
             self.metered_vm_write_bytes_to_linear_memory(vmcaller, &vm, pos, obj_buf)
+        })
+    }
+
+    pub(crate) fn memobj_copy_to_linear_memory_mem<HOT: MemHostObjectType, M: CustomContextVM>(
+        &self,
+        m: &mut M,
+        obj: HOT::Wrapper,
+        obj_pos: U32Val,
+        lm_pos: U32Val,
+        len: U32Val,
+    ) -> Result<(), HostError> {
+        let MemFnArgsCustomVmMut { pos, len, .. } = self.get_mem_fn_args_custom_vm_mut(m, lm_pos, len);
+        self.memobj_visit_and_copy_bytes_out::<HOT>(obj, obj_pos, len, |obj_buf| {
+            self.metered_vm_write_bytes_to_linear_memory_mem(m, pos, obj_buf)
         })
     }
 
