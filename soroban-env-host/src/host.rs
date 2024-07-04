@@ -525,19 +525,19 @@ impl Host {
             )
         })?;
         Ok(Val::VOID)
-    }
-/* 
+    } 
+    
     pub fn bytes_copy_to_linear_memory_mem<M: CustomContextVM>(
         &self,
-        m: M,
+        m: &mut M,
         b: BytesObject,
         b_pos: U32Val,
         lm_pos: U32Val,
         len: U32Val,
     ) -> Result<Void, HostError> {
-        self.memobj_copy_to_linear_memory::<ScBytes>(vmcaller, b, b_pos, lm_pos, len)?;
+        self.memobj_copy_to_linear_memory_mem::<ScBytes, M>(m, b, b_pos, lm_pos, len)?;
         Ok(Val::VOID)
-    } */
+    }
 
     /// Constructs a new [`Host`] that will use the provided [`Storage`] for
     /// contract-data access functions such as
