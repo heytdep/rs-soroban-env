@@ -1,5 +1,5 @@
 [package]
-name = "soroban-env-common"
+name = "soroban-env-common-zephyr"
 description = "Soroban contract environment common types and functionality."
 homepage = "https://github.com/stellar/rs-soroban-env"
 repository = "https://github.com/stellar/rs-soroban-env"
