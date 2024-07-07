@@ -1,6 +1,6 @@
 use expect_test::expect;
 use soroban_env_common::EnvBase;
-use soroban_env_host::{Compare, DiagnosticLevel, Env, Host, HostError, Tag, Val};
+use soroban_env_host_zephyr::{Compare, DiagnosticLevel, Env, Host, HostError, Tag, Val};
 
 #[test]
 fn vec_as_seen_by_user() -> Result<(), HostError> {

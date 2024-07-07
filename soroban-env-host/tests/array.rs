@@ -1,4 +1,4 @@
-use soroban_env_host::{BytesObject, Host, HostError};
+use soroban_env_host_zephyr::{BytesObject, Host, HostError};
 
 use soroban_env_common::{Env, TryIntoVal, Val};
 

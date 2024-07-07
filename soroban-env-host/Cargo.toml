@@ -1,5 +1,5 @@
 [package]
-name = "soroban-env-host"
+name = "soroban-env-host-zephyr"
 description = "Soroban contract host environment."
 homepage = "https://github.com/stellar/rs-soroban-env"
 repository = "https://github.com/stellar/rs-soroban-env"

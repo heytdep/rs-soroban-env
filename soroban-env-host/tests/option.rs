@@ -1,5 +1,5 @@
 use soroban_env_common::{Tag, TryIntoVal, Val};
-use soroban_env_host::{Host, HostError};
+use soroban_env_host_zephyr::{Host, HostError};
 
 #[test]
 fn some() -> Result<(), HostError> {

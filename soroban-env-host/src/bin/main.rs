@@ -7,7 +7,7 @@
 // In the future this might also provide some other top-level host functionality
 // that users or developers might wish to run on the command-line.
 
-use soroban_env_host::{budget::Budget, e2e_invoke::invoke_host_function, LedgerInfo};
+use soroban_env_host_zephyr::{budget::Budget, e2e_invoke::invoke_host_function, LedgerInfo};
 
 fn main() {
     let budget = Budget::default();

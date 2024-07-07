@@ -1,5 +1,5 @@
 use soroban_env_common::xdr::{Hash, LedgerEntry, LedgerEntryData, LedgerEntryExt, WriteXdr};
-use soroban_env_host::{
+use soroban_env_host_zephyr::{
     fees::{
         compute_rent_fee, compute_transaction_resource_fee, compute_write_fee_per_1kb,
         FeeConfiguration, LedgerEntryRentChange, RentFeeConfiguration, TransactionResources,

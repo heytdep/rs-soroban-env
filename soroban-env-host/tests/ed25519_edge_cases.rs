@@ -60,7 +60,7 @@
 
 use ed25519_dalek::{Signature, VerifyingKey, PUBLIC_KEY_LENGTH, SIGNATURE_LENGTH};
 use soroban_env_common::{Env, EnvBase};
-use soroban_env_host::{
+use soroban_env_host_zephyr::{
     xdr::{ScErrorCode, ScErrorType},
     Host,
 };

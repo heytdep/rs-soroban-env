@@ -6,7 +6,7 @@ mod v21 {
         AffinePoint, EncodedPoint,
     };
     use soroban_env_common::EnvBase;
-    use soroban_env_host::{budget::AsBudget, Env, Host, HostError};
+    use soroban_env_host_zephyr::{budget::AsBudget, Env, Host, HostError};
 
     const PROTOCOL_SUPPORT_FOR_SECP256R1: u32 = 21;
 
