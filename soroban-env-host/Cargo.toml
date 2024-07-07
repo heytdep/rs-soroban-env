@@ -101,6 +101,7 @@ default-features = false
 features = ["arbitrary"]
 
 [features]
+default = ["testutils"]
 testutils = ["soroban-env-common/testutils", "recording_mode", "dep:backtrace"]
 next = ["soroban-env-common/next"]
 tracy = ["dep:tracy-client", "soroban-env-common/tracy"]
