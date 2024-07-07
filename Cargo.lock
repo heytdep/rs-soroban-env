@@ -1310,7 +1310,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "soroban-bench-utils"
-version = "21.0.2"
+version = "21.0.3"
 dependencies = [
  "perf-event",
  "soroban-env-common",
@@ -1319,7 +1319,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-builtin-sdk-macros"
-version = "21.0.2"
+version = "21.0.3"
 dependencies = [
  "itertools",
  "proc-macro2",
@@ -1329,7 +1329,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-env-common"
-version = "21.0.2"
+version = "21.0.3"
 dependencies = [
  "arbitrary",
  "crate-git-revision",
@@ -1348,7 +1348,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-env-guest"
-version = "21.0.2"
+version = "21.0.3"
 dependencies = [
  "soroban-env-common",
  "static_assertions",
@@ -1356,7 +1356,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-env-host-zephyr"
-version = "21.0.2"
+version = "21.0.3"
 dependencies = [
  "arbitrary",
  "backtrace",
@@ -1411,7 +1411,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-env-macros-zephyr"
-version = "21.0.2"
+version = "21.0.3"
 dependencies = [
  "itertools",
  "proc-macro2",
@@ -1424,7 +1424,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-simulation-zephyr"
-version = "21.0.2"
+version = "21.0.3"
 dependencies = [
  "anyhow",
  "pretty_assertions",
@@ -1439,7 +1439,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-synth-wasm"
-version = "21.0.2"
+version = "21.0.3"
 dependencies = [
  "arbitrary",
  "expect-test",
@@ -1453,7 +1453,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-test-wasms"
-version = "21.0.2"
+version = "21.0.3"
 
 [[package]]
 name = "soroban-wasmi"
@@ -1502,9 +1502,9 @@ dependencies = [
 
 [[package]]
 name = "stellar-xdr"
-version = "21.0.1"
+version = "21.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88e716110d5e050e528820217f84d4667e166ced841ba48d074152d4ad4ab884"
+checksum = "ec43c9c5ae7ec7b6ac9e263b6d5b9e3781aa05ba3a1c05f6e70701c5c6600665"
 dependencies = [
  "arbitrary",
  "base64 0.13.1",
@@ -1556,7 +1556,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "test_no_std"
-version = "21.0.2"
+version = "21.0.3"
 dependencies = [
  "soroban-env-common",
 ]
