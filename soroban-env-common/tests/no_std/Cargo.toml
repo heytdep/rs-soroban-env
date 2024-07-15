@@ -10,4 +10,4 @@ doctest = false
 test = false
 
 [dependencies]
-soroban-env-common = { path = "../../" }
+soroban-env-common = { package = "soroban-env-common-zephyr", path = "../../" }
