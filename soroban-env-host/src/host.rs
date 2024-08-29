@@ -10,7 +10,7 @@ use crate::{
     impl_wrapping_obj_to_num,
     num::*,
     storage::Storage,
-    vm::{ModuleCache, CustomContextVM},
+    vm::{CustomContextVM, ModuleCache},
     xdr::{
         int128_helpers, AccountId, Asset, ContractCostType, ContractEventType, ContractExecutable,
         ContractIdPreimage, ContractIdPreimageFromAddress, CreateContractArgs, Duration, Hash,
@@ -344,7 +344,6 @@ impl Host {
         vals_pos: U32Val,
         len: U32Val,
     ) -> Result<VecObject, HostError> {
-
         let MemFnArgsCustomVm { pos, len, .. } = self.get_mem_fn_args_custom_vm(&m, vals_pos, len);
         Vec::<Val>::charge_bulk_init_cpy(len as u64, self)?;
         let mut vals: Vec<Val> = vec![Val::VOID.to_val(); len as usize];
@@ -359,7 +358,7 @@ impl Host {
             vals.as_mut_slice(),
             |buf| Ok(Val::from_payload(u64::from_le_bytes(*buf))),
         )?;
-        
+
         for v in vals.iter() {
             self.check_val_integrity(*v)?;
         }
@@ -375,9 +374,7 @@ impl Host {
         len: U32Val,
     ) -> Result<Void, HostError> {
         let MemFnArgsCustomVmMut {
-            pos: keys_pos,
-            len,
-            ..
+            pos: keys_pos, len, ..
         } = self.get_mem_fn_args_custom_vm_mut(m, keys_pos, len);
         self.visit_obj(map, |mapobj: &HostMap| {
             if mapobj.len() != len as usize {
@@ -416,7 +413,7 @@ impl Host {
             // Step 2: write all vals.
             // charges memcpy of converting map entries into bytes
             self.charge_budget(ContractCostType::MemCpy, Some((len as u64).saturating_mul(8)))?;
-            
+
             self.metered_vm_write_vals_to_linear_memory_mem(
                 m,
                 vals_pos.into(),
@@ -427,7 +424,7 @@ impl Host {
                     ))
                 },
             )?;
-            
+
             Ok(())
         })?;
 
@@ -470,19 +467,14 @@ impl Host {
     ) -> Result<U32Val, HostError> {
         let MemFnArgsCustomVm { mem, pos, len } = self.get_mem_fn_args_custom_vm(&m, lm_pos, len);
         let mut found = None;
-        self.metered_vm_scan_slices_in_linear_memory_mem(
-            mem,
-            pos,
-            len as usize,
-            |i, slice| {
-                if self.symbol_matches(slice, sym)? {
-                    if found.is_none() {
-                        found = Some(self.usize_to_u32(i)?)
-                    }
+        self.metered_vm_scan_slices_in_linear_memory_mem(mem, pos, len as usize, |i, slice| {
+            if self.symbol_matches(slice, sym)? {
+                if found.is_none() {
+                    found = Some(self.usize_to_u32(i)?)
                 }
-                Ok(())
-            },
-        )?;
+            }
+            Ok(())
+        })?;
         match found {
             None => Err(self.err(
                 ScErrorType::Value,
@@ -501,7 +493,8 @@ impl Host {
         vals_pos: U32Val,
         len: U32Val,
     ) -> Result<Void, HostError> {
-        let MemFnArgsCustomVmMut { mem, pos, len } = self.get_mem_fn_args_custom_vm_mut(m, vals_pos, len);
+        let MemFnArgsCustomVmMut { mem, pos, len } =
+            self.get_mem_fn_args_custom_vm_mut(m, vals_pos, len);
         self.visit_obj(vec, |vecobj: &HostVec| {
             if vecobj.len() != len as usize {
                 return Err(self.err(
@@ -519,14 +512,14 @@ impl Host {
                 vecobj.as_slice(),
                 |x| {
                     Ok(u64::to_le_bytes(
-                        self.absolute_to_relative(*x)?.get_payload(),
+                        x.get_payload(),
                     ))
                 },
             )
         })?;
         Ok(Val::VOID)
-    } 
-    
+    }
+
     pub fn bytes_copy_to_linear_memory_mem<M: CustomContextVM>(
         &self,
         m: &mut M,
@@ -720,13 +713,12 @@ impl Host {
         Ok(())
     }
 
-
     pub fn get_ledger_info(&self) -> Result<Option<LedgerInfo>, HostError> {
         let info = self.try_borrow_ledger()?;
-        
+
         Ok(info.clone())
     }
-    
+
     pub fn set_ledger_info(&self, info: LedgerInfo) -> Result<(), HostError> {
         *self.try_borrow_ledger_mut()? = Some(info);
         Ok(())
@@ -2661,7 +2653,6 @@ impl VmCallerEnv for Host {
         self.memobj_copy_to_linear_memory::<ScBytes>(vmcaller, b, b_pos, lm_pos, len)?;
         Ok(Val::VOID)
     }
-  
 
     fn bytes_copy_from_linear_memory(
         &self,

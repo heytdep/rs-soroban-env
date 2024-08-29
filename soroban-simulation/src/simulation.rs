@@ -9,7 +9,6 @@ use crate::snapshot_source::{
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use soroban_env_host::budget::Budget;
-use soroban_env_host::{Host, TryFromVal};
 use soroban_env_host::{
     e2e_invoke::invoke_host_function_in_recording_mode,
     e2e_invoke::LedgerEntryChange,
@@ -21,6 +20,7 @@ use soroban_env_host::{
     xdr::{ExtendFootprintTtlOp, ExtensionPoint, LedgerEntry, ReadXdr, RestoreFootprintOp},
     LedgerInfo, DEFAULT_XDR_RW_LIMITS,
 };
+use soroban_env_host::{Host, TryFromVal};
 use std::rc::Rc;
 
 #[derive(Deserialize, Serialize, Default)]
@@ -85,7 +85,6 @@ pub struct InvokeHostFunctionSimulationResult {
     pub modified_entries: Vec<LedgerEntryDiff>,
 }
 
-
 /// Result of simulating `ExtendFootprintTtlOp` operation.
 #[derive(Eq, PartialEq, Debug)]
 pub struct ExtendTtlOpSimulationResult {
@@ -138,7 +137,7 @@ pub fn simulate_invoke_host_function_op(
     } else {
         (Budget::default(), NetworkConfig::default())
     };
-    
+
     let mut diagnostic_events = vec![];
     let recording_result = invoke_host_function_in_recording_mode(
         &budget,
@@ -161,7 +160,8 @@ pub fn simulate_invoke_host_function_op(
     let mut simulation_result = InvokeHostFunctionSimulationResult {
         // Don't distinguish between the errors that happen during invocation vs
         // during setup as that seems too granular.
-        invoke_result: invoke_result.map_err(|e| ScVal::try_from_val(&Host::default(), &e.error.to_val()).unwrap()),
+        invoke_result: invoke_result
+            .map_err(|e| ScVal::try_from_val(&Host::default(), &e.error.to_val()).unwrap()),
         simulated_instructions: budget.get_cpu_insns_consumed()?.try_into()?,
         simulated_memory: budget.get_mem_bytes_consumed()?.try_into()?,
         diagnostic_events,

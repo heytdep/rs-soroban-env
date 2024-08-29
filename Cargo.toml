@@ -21,14 +21,14 @@ exclude = ["soroban-test-wasms/wasm-workspace"]
 # code guarded by `unstable-*` features to make it enabled
 # unconditionally.
 
-version = "21.2.0"
+version = "21.2.1"
 rust-version = "1.74.0"
 
 [workspace.dependencies]
 soroban-env-common = { package = "soroban-env-common-zephyr", version = "=21.2.0", path = "soroban-env-common", default-features = false }
 soroban-env-guest = { version = "=21.2.0", path = "soroban-env-guest" }
-soroban-env-host = { package = "soroban-env-host-zephyr", version = "=21.2.0", path = "soroban-env-host" }
-soroban-env-macros = { package = "soroban-env-macros-zephyr", version = "=21.2.0", path = "soroban-env-macros" }
+soroban-env-host = { package = "soroban-env-host-zephyr", version = "=21.2.1", path = "soroban-env-host" }
+soroban-env-macros = { package = "soroban-env-macros-zephyr", version = "=21.2.1", path = "soroban-env-macros" }
 soroban-builtin-sdk-macros = { version = "=21.2.0", path = "soroban-builtin-sdk-macros" }
 # NB: this must match the wasmparser version wasmi is using
 wasmparser = "=0.116.1"

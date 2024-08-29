@@ -18,9 +18,8 @@ use soroban_env_host::fees::{FeeConfiguration, RentFeeConfiguration};
 use soroban_env_host::xdr::{
     ContractCostParamEntry, ContractCostParams, ContractCostType, ContractDataDurability,
     ContractDataEntry, ExtensionPoint, LedgerEntry, LedgerEntryData, LedgerFootprint, LedgerKey,
-    LedgerKeyContractData, ScAddress,  ScNonceKey, ScVal,
-    SorobanAddressCredentials, SorobanAuthorizationEntry, SorobanCredentials, SorobanResources,
-    SorobanTransactionData,
+    LedgerKeyContractData, ScAddress, ScNonceKey, ScVal, SorobanAddressCredentials,
+    SorobanAuthorizationEntry, SorobanCredentials, SorobanResources, SorobanTransactionData,
 };
 
 use soroban_test_wasms::{ADD_I32, AUTH_TEST_CONTRACT};

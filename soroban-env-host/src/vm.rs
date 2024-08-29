@@ -590,7 +590,6 @@ impl Vm {
     }
 }
 
-
 /// A trait that VMs that want to work with a custom context should
 /// implement.
 pub trait CustomContextVM {
@@ -599,7 +598,7 @@ pub trait CustomContextVM {
 
     fn data(&self) -> &[u8];
 
-    fn write(&mut self, pos:u32, slice: &[u8]) -> i64;
+    fn write(&mut self, pos: u32, slice: &[u8]) -> i64;
 
     fn data_mut(&mut self) -> &mut [u8];
 }

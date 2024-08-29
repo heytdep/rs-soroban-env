@@ -1,5 +1,10 @@
 use crate::{
-    budget::AsBudget, host::Frame, host_object::MemHostObjectType, vm::CustomContextVM, xdr::{ContractCostType, ScErrorCode, ScErrorType, ScSymbol}, Compare, Host, HostError, Symbol, SymbolObject, SymbolSmall, SymbolStr, U32Val, Vm, VmCaller
+    budget::AsBudget,
+    host::Frame,
+    host_object::MemHostObjectType,
+    vm::CustomContextVM,
+    xdr::{ContractCostType, ScErrorCode, ScErrorType, ScSymbol},
+    Compare, Host, HostError, Symbol, SymbolObject, SymbolSmall, SymbolStr, U32Val, Vm, VmCaller,
 };
 
 use std::{cmp::Ordering, rc::Rc};
@@ -17,7 +22,6 @@ pub(crate) struct MemFnArgs {
     pub(crate) len: u32,
 }
 
-
 #[cfg(any(test, feature = "testutils"))]
 pub(crate) struct MemFnArgsCustomVm<'a, M: CustomContextVM> {
     pub(crate) mem: &'a M,
@@ -31,7 +35,6 @@ pub(crate) struct MemFnArgsCustomVmMut<'a, M: CustomContextVM> {
     pub(crate) pos: u32,
     pub(crate) len: u32,
 }
-
 
 impl Host {
     // Notes on metering: free
@@ -59,26 +62,28 @@ impl Host {
     }
 
     #[cfg(any(test, feature = "testutils"))]
-    pub(crate) fn get_mem_fn_args_custom_vm<'a, M: CustomContextVM>(&'a self, m: &'a M, pos: U32Val, len: U32Val) -> MemFnArgsCustomVm<M> {
+    pub(crate) fn get_mem_fn_args_custom_vm<'a, M: CustomContextVM>(
+        &'a self,
+        m: &'a M,
+        pos: U32Val,
+        len: U32Val,
+    ) -> MemFnArgsCustomVm<M> {
         let pos: u32 = pos.into();
         let len: u32 = len.into();
-        
-        MemFnArgsCustomVm::<M> {
-            mem: m,
-            pos,
-            len
-        }
+
+        MemFnArgsCustomVm::<M> { mem: m, pos, len }
     }
 
-    pub(crate) fn get_mem_fn_args_custom_vm_mut<'a, M: CustomContextVM>(&'a self, m: &'a mut M, pos: U32Val, len: U32Val) -> MemFnArgsCustomVmMut<M> {
+    pub(crate) fn get_mem_fn_args_custom_vm_mut<'a, M: CustomContextVM>(
+        &'a self,
+        m: &'a mut M,
+        pos: U32Val,
+        len: U32Val,
+    ) -> MemFnArgsCustomVmMut<M> {
         let pos: u32 = pos.into();
         let len: u32 = len.into();
-        
-        MemFnArgsCustomVmMut::<M> {
-            mem: m,
-            pos,
-            len
-        }
+
+        MemFnArgsCustomVmMut::<M> { mem: m, pos, len }
     }
 
     pub(crate) fn metered_vm_write_bytes_to_linear_memory(
@@ -104,7 +109,7 @@ impl Host {
     ) -> Result<(), HostError> {
         self.charge_budget(ContractCostType::MemCpy, Some(buf.len() as u64))?;
         m.write(mem_pos, buf);
-        
+
         Ok(())
     }
 
@@ -179,7 +184,11 @@ impl Host {
         Ok(())
     }
 
-    pub(crate) fn metered_vm_write_vals_to_linear_memory_mem<const VAL_SZ: usize, VAL, M: CustomContextVM>(
+    pub(crate) fn metered_vm_write_vals_to_linear_memory_mem<
+        const VAL_SZ: usize,
+        VAL,
+        M: CustomContextVM,
+    >(
         &self,
         m: &mut M,
         mem_pos: u32,
@@ -205,8 +214,8 @@ impl Host {
         //let mem_data = m.data();
         //println!("before mem_slice:{:?}", mem_data);
         //let mem_slice = mem_data
-            //.get(mem_range)
-            //.ok_or_else(|| self.err_oob_linear_memory())?;
+        //.get(mem_range)
+        //.ok_or_else(|| self.err_oob_linear_memory())?;
 
         self.charge_budget(ContractCostType::MemCpy, Some(byte_len as u64))?;
         let mut mem_pos = mem_pos;
@@ -275,7 +284,11 @@ impl Host {
         Ok(())
     }
 
-    pub(crate) fn metered_vm_read_vals_from_linear_memory_mem<const VAL_SZ: usize, VAL, M: CustomContextVM>(
+    pub(crate) fn metered_vm_read_vals_from_linear_memory_mem<
+        const VAL_SZ: usize,
+        VAL,
+        M: CustomContextVM,
+    >(
         &self,
         m: &M,
         mem_pos: u32,
@@ -316,7 +329,6 @@ impl Host {
         }
         Ok(())
     }
-
 
     pub(crate) fn metered_vm_scan_slices_in_linear_memory_mem<M: CustomContextVM>(
         &self,
@@ -520,7 +532,8 @@ impl Host {
         lm_pos: U32Val,
         len: U32Val,
     ) -> Result<(), HostError> {
-        let MemFnArgsCustomVmMut { pos, len, .. } = self.get_mem_fn_args_custom_vm_mut(m, lm_pos, len);
+        let MemFnArgsCustomVmMut { pos, len, .. } =
+            self.get_mem_fn_args_custom_vm_mut(m, lm_pos, len);
         self.memobj_visit_and_copy_bytes_out::<HOT>(obj, obj_pos, len, |obj_buf| {
             self.metered_vm_write_bytes_to_linear_memory_mem(m, pos, obj_buf)
         })
@@ -608,8 +621,9 @@ impl Host {
         lm_pos: U32Val,
         len: U32Val,
     ) -> Result<HOT::Wrapper, HostError> {
-        let MemFnArgsCustomVm::<M> { mem, pos, len } = self.get_mem_fn_args_custom_vm(m, lm_pos, len);
-        
+        let MemFnArgsCustomVm::<M> { mem, pos, len } =
+            self.get_mem_fn_args_custom_vm(m, lm_pos, len);
+
         let mut vnew: Vec<u8> = vec![0; len as usize];
         self.metered_vm_read_bytes_from_linear_memory_mem(mem, pos, &mut vnew)?;
         self.add_host_object::<HOT>(HOT::try_from_bytes(self, vnew)?)

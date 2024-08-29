@@ -157,10 +157,9 @@ impl LedgerEntryUpdater {
     }
 }
 
-
 enum SnapshotSourceHolder<'a> {
     Ref(&'a dyn SnapshotSource),
-    
+
     #[allow(dead_code)]
     Rc(Rc<dyn SnapshotSource>),
 }
