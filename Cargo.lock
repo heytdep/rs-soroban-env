@@ -1313,7 +1313,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "soroban-bench-utils"
-version = "21.2.0"
+version = "21.2.2"
 dependencies = [
  "perf-event",
  "soroban-env-common-zephyr",
@@ -1323,7 +1323,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-builtin-sdk-macros"
-version = "21.2.0"
+version = "21.2.2"
 dependencies = [
  "itertools",
  "proc-macro2",
@@ -1333,7 +1333,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-env-common-zephyr"
-version = "21.2.0"
+version = "21.2.2"
 dependencies = [
  "arbitrary",
  "crate-git-revision",
@@ -1352,7 +1352,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-env-guest"
-version = "21.2.0"
+version = "21.2.2"
 dependencies = [
  "soroban-env-common-zephyr",
  "static_assertions",
@@ -1360,7 +1360,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-env-host-zephyr"
-version = "21.2.0"
+version = "21.2.2"
 dependencies = [
  "arbitrary",
  "backtrace",
@@ -1415,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-env-macros-zephyr"
-version = "21.2.0"
+version = "21.2.2"
 dependencies = [
  "itertools",
  "proc-macro2",
@@ -1428,7 +1428,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-simulation-zephyr"
-version = "21.2.0"
+version = "21.2.2"
 dependencies = [
  "anyhow",
  "pretty_assertions",
@@ -1443,7 +1443,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-synth-wasm"
-version = "21.2.0"
+version = "21.2.2"
 dependencies = [
  "arbitrary",
  "expect-test",
@@ -1457,7 +1457,7 @@ dependencies = [
 
 [[package]]
 name = "soroban-test-wasms"
-version = "21.2.0"
+version = "21.2.2"
 
 [[package]]
 name = "soroban-wasmi"
@@ -1560,7 +1560,7 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "test_no_std"
-version = "21.2.0"
+version = "21.2.2"
 dependencies = [
  "soroban-env-common-zephyr",
 ]
