@@ -9,6 +9,7 @@ use crate::snapshot_source::{
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use soroban_env_host::budget::Budget;
+
 use soroban_env_host::{
     e2e_invoke::invoke_host_function_in_recording_mode,
     e2e_invoke::LedgerEntryChange,
@@ -17,7 +18,7 @@ use soroban_env_host::{
         AccountId, ContractEvent, DiagnosticEvent, HostFunction, InvokeHostFunctionOp, LedgerKey,
         OperationBody, ScVal, SorobanAuthorizationEntry, SorobanResources, SorobanTransactionData,
     },
-    xdr::{ExtendFootprintTtlOp, ExtensionPoint, LedgerEntry, ReadXdr, RestoreFootprintOp},
+    xdr::{ExtendFootprintTtlOp, ExtensionPoint, SorobanTransactionDataExt, LedgerEntry, ReadXdr, RestoreFootprintOp},
     LedgerInfo, DEFAULT_XDR_RW_LIMITS,
 };
 use soroban_env_host::{Host, TryFromVal};
@@ -347,7 +348,7 @@ fn create_transaction_data(
     SorobanTransactionData {
         resources,
         resource_fee,
-        ext: ExtensionPoint::V0,
+        ext: SorobanTransactionDataExt::V0,
     }
 }
 

@@ -6,31 +6,30 @@ use crate::{
     budget::{AsBudget, Budget},
     events::{diagnostic::DiagnosticLevel, Events, InternalEventsBuffer},
     host_object::{HostMap, HostObject, HostVec},
-    impl_bignum_host_fns, impl_bignum_host_fns_rhs_u32, impl_wrapping_obj_from_num,
-    impl_wrapping_obj_to_num,
+    impl_bignum_host_fns, impl_bignum_host_fns_rhs_u32, impl_bls12_381_fr_arith_host_fns,
+    impl_wrapping_obj_from_num, impl_wrapping_obj_to_num,
     num::*,
     storage::Storage,
     vm::{CustomContextVM, ModuleCache},
     xdr::{
         int128_helpers, AccountId, Asset, ContractCostType, ContractEventType, ContractExecutable,
-        ContractIdPreimage, ContractIdPreimageFromAddress, CreateContractArgs, Duration, Hash,
+        ContractIdPreimage, ContractIdPreimageFromAddress, CreateContractArgsV2, Duration, Hash,
         LedgerEntryData, PublicKey, ScAddress, ScBytes, ScErrorCode, ScErrorType, ScString,
         ScSymbol, ScVal, TimePoint, Uint256,
     },
     AddressObject, Bool, BytesObject, Compare, ConversionError, EnvBase, Error, LedgerInfo,
-    MapObject, Object, StorageType, StringObject, Symbol, SymbolObject, TryFromVal, Val, VecObject,
-    VmCaller, VmCallerEnv, Void,
+    MapObject, Object, StorageType, StringObject, Symbol, SymbolObject, SymbolSmall, TryFromVal,
+    TryIntoVal, Val, VecObject, VmCaller, VmCallerEnv, Void,
 };
 
 mod comparison;
 mod conversion;
-pub(crate) mod crypto;
 mod data_helper;
 mod declared_size;
 pub(crate) mod error;
 pub(crate) mod frame;
 pub(crate) mod ledger_info_helper;
-mod lifecycle;
+pub(crate) mod lifecycle;
 mod mem_helper;
 pub(crate) mod metered_clone;
 pub(crate) mod metered_hash;
@@ -38,11 +37,12 @@ pub(crate) mod metered_map;
 pub(crate) mod metered_vector;
 pub(crate) mod metered_xdr;
 mod num;
-mod prng;
+pub(crate) mod prng;
 pub(crate) mod trace;
 mod validity;
 
 pub use error::HostError;
+use frame::CallParams;
 pub use prng::{Seed, SEED_BYTES};
 pub use trace::{TraceEvent, TraceHook, TraceRecord, TraceState};
 
@@ -60,7 +60,6 @@ pub use frame::ContractFunctionSet;
 pub(crate) use frame::Frame;
 #[cfg(any(test, feature = "recording_mode"))]
 use rand_chacha::ChaCha20Rng;
-use soroban_env_common::SymbolSmall;
 
 #[cfg(any(test, feature = "testutils"))]
 #[derive(Clone, Copy)]
@@ -77,6 +76,13 @@ pub type ContractInvocationHook = Rc<dyn for<'a> Fn(&'a Host, ContractInvocation
 pub struct CoverageScoreboard {
     pub vm_to_vm_calls: usize,
 }
+
+// The soroban 22.x host only supports protocol 22 and later, having
+// adopted a new version of wasmi with a new fuel metering system, it
+// cannot accurately replay earlier contracts. Earlier protocols
+// must run on Soroban 21.x or earlier.
+
+pub(crate) const MIN_LEDGER_PROTOCOL_VERSION: u32 = 22;
 
 #[derive(Clone, Default)]
 struct HostImpl {
@@ -338,6 +344,66 @@ impl Debug for Host {
 }
 
 impl Host {
+    pub fn map_new_from_linear_memory_mem<M: CustomContextVM>(
+        &self,
+        m: M,
+        keys_pos: U32Val,
+        vals_pos: U32Val,
+        len: U32Val,
+    ) -> Result<MapObject, HostError> {
+        let MemFnArgsCustomVm { pos, len, mem } = self.get_mem_fn_args_custom_vm(&m, keys_pos, len);
+        let mut key_syms = Vec::<Symbol>::with_metered_capacity(len as usize, self)?;
+        
+        self.metered_vm_scan_slices_in_linear_memory_mem(
+            mem,
+            pos,
+            len as usize,
+            |_n, slice| {
+                // Optimization note: this does an unnecessary `ScVal` roundtrip.
+                // We should just use `Symbol::try_from_val` on the slice instead.
+                self.charge_budget(ContractCostType::MemCpy, Some(slice.len() as u64))?;
+                let scsym = ScSymbol(slice.try_into()?);
+                let sym = Symbol::try_from(self.to_valid_host_val(&ScVal::Symbol(scsym))?)?;
+                key_syms.push(sym);
+                Ok(())
+            },
+        )?;
+
+        println!("Scanned");
+        // Step 2: extract all val Vals.
+        let vals_pos: u32 = vals_pos.into();
+        Vec::<Val>::charge_bulk_init_cpy(len as u64, self)?;
+        let mut vals: Vec<Val> = vec![Val::VOID.into(); len as usize];
+        // charge for conversion from bytes to `Val`s
+        self.charge_budget(
+            ContractCostType::MemCpy,
+            Some((len as u64).saturating_mul(8)),
+        )?;
+        self.metered_vm_read_vals_from_linear_memory_mem::<8, Val, M>(
+            mem,
+            vals_pos,
+            vals.as_mut_slice(),
+            |buf| Ok(Val::from_payload(u64::from_le_bytes(*buf))),
+        )?;
+        for v in vals.iter() {
+            self.check_val_integrity(*v)?;
+        }
+
+        // Step 3: turn pairs into a map.
+        let pair_iter = key_syms
+            .iter()
+            .map(|s| s.to_val())
+            .zip(vals.iter().cloned());
+
+            println!("keys {:?}", key_syms);
+            println!("vals {:?}", vals);
+
+        let map = HostMap::from_exact_iter(pair_iter, self);
+        
+        println!("map {:?}", map.clone().err());
+        self.add_host_object(map?)
+    }
+
     pub fn vec_new_from_linear_memory_mem<M: CustomContextVM>(
         &self,
         m: M,
@@ -574,9 +640,7 @@ impl Host {
     }
 
     pub fn build_module_cache_if_needed(&self) -> Result<(), HostError> {
-        if self.get_ledger_protocol_version()? >= ModuleCache::MIN_LEDGER_VERSION
-            && self.try_borrow_module_cache()?.is_none()
-        {
+        if self.try_borrow_module_cache()?.is_none() {
             let cache = ModuleCache::new(self)?;
             let linker = cache.make_linker(self)?;
             *self.try_borrow_module_cache_mut()? = Some(cache);
@@ -721,6 +785,35 @@ impl Host {
 
     pub fn set_ledger_info(&self, info: LedgerInfo) -> Result<(), HostError> {
         *self.try_borrow_ledger_mut()? = Some(info);
+        self.check_ledger_protocol_supported()
+    }
+
+    pub(crate) fn check_ledger_protocol_supported(&self) -> Result<(), HostError> {
+        use soroban_env_common::meta;
+        let proto = self.get_ledger_protocol_version()?;
+        // There are some protocol-gating tests that want to register
+        // old-protocol contracts and run them in the new host. We allow this in
+        // test mode -- technically old contracts should _run_ -- but we don't
+        // allow it in production because it risks replaying an old contract
+        // with the new VM and thereby (subtly!) replaying its execution costs
+        // wrong.
+        #[cfg(not(test))]
+        if proto < MIN_LEDGER_PROTOCOL_VERSION {
+            return Err(self.err(
+                ScErrorType::Context,
+                ScErrorCode::InternalError,
+                "ledger protocol version too old for host",
+                &[proto.into()],
+            ));
+        }
+        if proto > meta::INTERFACE_VERSION.protocol {
+            return Err(self.err(
+                ScErrorType::Context,
+                ScErrorCode::InternalError,
+                "ledger protocol version too new for host",
+                &[proto.into()],
+            ));
+        }
         Ok(())
     }
 
@@ -856,6 +949,42 @@ impl Host {
             .map_err(|_| {
                 Error::from_type_and_code(ScErrorType::Context, ScErrorCode::InternalError).into()
             })
+    }
+
+    fn create_contract_impl(
+        &self,
+        deployer: AddressObject,
+        wasm_hash: BytesObject,
+        salt: BytesObject,
+        constructor_args: Option<VecObject>,
+    ) -> Result<AddressObject, HostError> {
+        let contract_id_preimage = ContractIdPreimage::Address(ContractIdPreimageFromAddress {
+            address: self.visit_obj(deployer, |addr: &ScAddress| addr.metered_clone(self))?,
+            salt: self.u256_from_bytesobj_input("contract_id_salt", salt)?,
+        });
+        let executable =
+            ContractExecutable::Wasm(self.hash_from_bytesobj_input("wasm_hash", wasm_hash)?);
+        let (constructor_args, constructor_args_vec) = if let Some(v) = constructor_args {
+            (
+                self.vecobject_to_scval_vec(v)?.to_vec(),
+                self.call_args_from_obj(v)?,
+            )
+        } else {
+            (vec![], vec![])
+        };
+        let args = CreateContractArgsV2 {
+            contract_id_preimage,
+            executable,
+            constructor_args: constructor_args.try_into().map_err(|_| {
+                self.err(
+                    ScErrorType::Value,
+                    ScErrorCode::InternalError,
+                    "couldn't convert constructor args vector to XDR",
+                    &[],
+                )
+            })?,
+        };
+        self.create_contract_internal(Some(deployer), args, constructor_args_vec)
     }
 }
 
@@ -2401,17 +2530,18 @@ impl VmCallerEnv for Host {
         wasm_hash: BytesObject,
         salt: BytesObject,
     ) -> Result<AddressObject, HostError> {
-        let contract_id_preimage = ContractIdPreimage::Address(ContractIdPreimageFromAddress {
-            address: self.visit_obj(deployer, |addr: &ScAddress| addr.metered_clone(self))?,
-            salt: self.u256_from_bytesobj_input("contract_id_salt", salt)?,
-        });
-        let executable =
-            ContractExecutable::Wasm(self.hash_from_bytesobj_input("wasm_hash", wasm_hash)?);
-        let args = CreateContractArgs {
-            contract_id_preimage,
-            executable,
-        };
-        self.create_contract_internal(Some(deployer), args)
+        self.create_contract_impl(deployer, wasm_hash, salt, None)
+    }
+
+    fn create_contract_with_constructor(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        deployer: AddressObject,
+        wasm_hash: BytesObject,
+        salt: BytesObject,
+        constructor_args: VecObject,
+    ) -> Result<AddressObject, HostError> {
+        self.create_contract_impl(deployer, wasm_hash, salt, Some(constructor_args))
     }
 
     // Notes on metering: covered by the components.
@@ -2423,13 +2553,14 @@ impl VmCallerEnv for Host {
         let asset: Asset = self.metered_from_xdr_obj(serialized_asset)?;
         let contract_id_preimage = ContractIdPreimage::Asset(asset);
         let executable = ContractExecutable::StellarAsset;
-        let args = CreateContractArgs {
+        let args = CreateContractArgsV2 {
             contract_id_preimage,
             executable,
+            constructor_args: Default::default(),
         };
         // Asset contracts don't need any deployer authorization (they're tied
         // to the asset issuers instead).
-        self.create_contract_internal(None, args)
+        self.create_contract_internal(None, args, vec![])
     }
 
     // Notes on metering: covered by the components.
@@ -2505,8 +2636,7 @@ impl VmCallerEnv for Host {
             &self.contract_id_from_address(contract_address)?,
             func,
             argvec.as_slice(),
-            ContractReentryMode::Prohibited,
-            false,
+            CallParams::default_external_call(),
         );
         if let Err(e) = &res {
             self.error(
@@ -2535,8 +2665,7 @@ impl VmCallerEnv for Host {
             &self.contract_id_from_address(contract_address)?,
             func,
             argvec.as_slice(),
-            ContractReentryMode::Prohibited,
-            false,
+            CallParams::default_external_call(),
         );
         match res {
             Ok(rv) => Ok(rv),
@@ -3045,6 +3174,202 @@ impl VmCallerEnv for Host {
         let msg_hash = self.hash_from_bytesobj_input("msg_digest", msg_digest)?;
         let res = self.secp256r1_verify_signature(&pk, &msg_hash, &sig)?;
         Ok(res.into())
+    }
+
+    fn bls12_381_check_g1_is_in_subgroup(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        pt: BytesObject,
+    ) -> Result<Bool, HostError> {
+        let pt = self.g1_affine_deserialize_from_bytesobj(pt, false)?;
+        self.check_point_is_in_subgroup(&pt, &ContractCostType::Bls12381G1CheckPointInSubgroup)
+            .map(|b| Bool::from(b))
+    }
+
+    fn bls12_381_g1_add(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        p0: BytesObject,
+        p1: BytesObject,
+    ) -> Result<BytesObject, HostError> {
+        let p0 = self.g1_affine_deserialize_from_bytesobj(p0, false)?;
+        let p1 = self.g1_affine_deserialize_from_bytesobj(p1, false)?;
+        let res = self.g1_add_internal(p0, p1)?;
+        self.g1_projective_serialize_uncompressed(res)
+    }
+
+    fn bls12_381_g1_mul(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        p0: BytesObject,
+        scalar: U256Val,
+    ) -> Result<BytesObject, HostError> {
+        let p0 = self.g1_affine_deserialize_from_bytesobj(p0, true)?;
+        let scalar = self.fr_from_u256val(scalar)?;
+        let res = self.g1_mul_internal(p0, scalar)?;
+        self.g1_projective_serialize_uncompressed(res)
+    }
+
+    fn bls12_381_g1_msm(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        vp: VecObject,
+        vs: VecObject,
+    ) -> Result<BytesObject, HostError> {
+        let points = self.checked_g1_vec_from_vecobj(vp)?;
+        let scalars = self.fr_vec_from_vecobj(vs)?;
+        let res = self.msm_internal(&points, &scalars, &ContractCostType::Bls12381G1Msm, "G1")?;
+        self.g1_projective_serialize_uncompressed(res)
+    }
+
+    fn bls12_381_map_fp_to_g1(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        fp: BytesObject,
+    ) -> Result<BytesObject, HostError> {
+        let fp = self.fp_deserialize_from_bytesobj(fp)?;
+        let g1 = self.map_to_curve(fp, ContractCostType::Bls12381MapFpToG1)?;
+        self.g1_affine_serialize_uncompressed(&g1)
+    }
+
+    fn bls12_381_hash_to_g1(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        mo: BytesObject,
+        dst: BytesObject,
+    ) -> Result<BytesObject, HostError> {
+        let g1 = self.visit_obj(mo, |msg: &ScBytes| {
+            self.visit_obj(dst, |dst: &ScBytes| {
+                self.hash_to_curve(
+                    dst.as_slice(),
+                    msg.as_slice(),
+                    &ContractCostType::Bls12381HashToG1,
+                )
+            })
+        })?;
+        self.g1_affine_serialize_uncompressed(&g1)
+    }
+
+    fn bls12_381_check_g2_is_in_subgroup(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        pt: BytesObject,
+    ) -> Result<Bool, HostError> {
+        let pt = self.g2_affine_deserialize_from_bytesobj(pt, false)?;
+        self.check_point_is_in_subgroup(&pt, &ContractCostType::Bls12381G2CheckPointInSubgroup)
+            .map(|b| Bool::from(b))
+    }
+
+    fn bls12_381_g2_add(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        p0: BytesObject,
+        p1: BytesObject,
+    ) -> Result<BytesObject, HostError> {
+        let p0 = self.g2_affine_deserialize_from_bytesobj(p0, false)?;
+        let p1 = self.g2_affine_deserialize_from_bytesobj(p1, false)?;
+        let res = self.g2_add_internal(p0, p1)?;
+        self.g2_projective_serialize_uncompressed(res)
+    }
+
+    fn bls12_381_g2_mul(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        p0: BytesObject,
+        scalar_le_bytes: U256Val,
+    ) -> Result<BytesObject, HostError> {
+        let p0 = self.g2_affine_deserialize_from_bytesobj(p0, true)?;
+        let scalar = self.fr_from_u256val(scalar_le_bytes)?;
+        let res = self.g2_mul_internal(p0, scalar)?;
+        self.g2_projective_serialize_uncompressed(res)
+    }
+
+    fn bls12_381_g2_msm(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        vp: VecObject,
+        vs: VecObject,
+    ) -> Result<BytesObject, HostError> {
+        let points = self.checked_g2_vec_from_vecobj(vp)?;
+        let scalars = self.fr_vec_from_vecobj(vs)?;
+        let res = self.msm_internal(&points, &scalars, &ContractCostType::Bls12381G2Msm, "G2")?;
+        self.g2_projective_serialize_uncompressed(res)
+    }
+
+    fn bls12_381_map_fp2_to_g2(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        fp2: BytesObject,
+    ) -> Result<BytesObject, HostError> {
+        let fp2 = self.fp2_deserialize_from_bytesobj(fp2)?;
+        let g2 = self.map_to_curve(fp2, ContractCostType::Bls12381MapFp2ToG2)?;
+        self.g2_affine_serialize_uncompressed(&g2)
+    }
+
+    fn bls12_381_hash_to_g2(
+        &self,
+        _vmcaller: &mut VmCaller<Host>,
+        msg: BytesObject,
+        dst: BytesObject,
+    ) -> Result<BytesObject, HostError> {
+        let g2 = self.visit_obj(msg, |msg: &ScBytes| {
+            self.visit_obj(dst, |dst: &ScBytes| {
+                self.hash_to_curve(
+                    dst.as_slice(),
+                    msg.as_slice(),
+                    &ContractCostType::Bls12381HashToG2,
+                )
+            })
+        })?;
+        self.g2_affine_serialize_uncompressed(&g2)
+    }
+
+    fn bls12_381_multi_pairing_check(
+        &self,
+        vmcaller: &mut VmCaller<Host>,
+        vp1: VecObject,
+        vp2: VecObject,
+    ) -> Result<Bool, HostError> {
+        let l1: u32 = self.vec_len(vmcaller, vp1)?.into();
+        let l2: u32 = self.vec_len(vmcaller, vp2)?.into();
+        if l1 != l2 || l1 == 0 {
+            return Err(self.err(
+                ScErrorType::Crypto,
+                ScErrorCode::InvalidInput,
+                format!("multi-pairing-check: invalid input vector lengths {l1} and {l2}").as_str(),
+                &[],
+            ));
+        }
+        let vp1 = self.checked_g1_vec_from_vecobj(vp1)?;
+        let vp2 = self.checked_g2_vec_from_vecobj(vp2)?;
+        let output = self.pairing_internal(&vp1, &vp2)?;
+        self.check_pairing_output(&output)
+    }
+
+    impl_bls12_381_fr_arith_host_fns!(bls12_381_fr_add, fr_add_internal);
+    impl_bls12_381_fr_arith_host_fns!(bls12_381_fr_sub, fr_sub_internal);
+    impl_bls12_381_fr_arith_host_fns!(bls12_381_fr_mul, fr_mul_internal);
+
+    fn bls12_381_fr_pow(
+        &self,
+        _vmcaller: &mut VmCaller<Self::VmUserState>,
+        lhs: U256Val,
+        rhs: U64Val,
+    ) -> Result<U256Val, Self::Error> {
+        let lhs = self.fr_from_u256val(lhs)?;
+        let rhs = rhs.try_into_val(self)?;
+        let res = self.fr_pow_internal(&lhs, &rhs)?;
+        self.fr_to_u256val(res)
+    }
+
+    fn bls12_381_fr_inv(
+        &self,
+        _vmcaller: &mut VmCaller<Self::VmUserState>,
+        lhs: U256Val,
+    ) -> Result<U256Val, Self::Error> {
+        let lhs = self.fr_from_u256val(lhs)?;
+        let res = self.fr_inv_internal(&lhs)?;
+        self.fr_to_u256val(res)
     }
 
     // endregion: "crypto" module functions

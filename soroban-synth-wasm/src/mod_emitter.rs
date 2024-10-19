@@ -1,5 +1,5 @@
 use crate::FuncEmitter;
-use soroban_env_common::xdr::{Limits, ScEnvMetaEntry, WriteXdr};
+use soroban_env_common::xdr::{Limits, ScEnvMetaEntry, ScEnvMetaEntryInterfaceVersion, WriteXdr};
 use std::str::FromStr;
 use std::{borrow::Cow, collections::BTreeMap, env};
 #[cfg(feature = "adversarial")]
@@ -117,9 +117,10 @@ impl ModEmitter {
     /// Add a metadata section marking the module as belonging to the specified
     /// protocol version.
     pub fn add_protocol_version_meta(&mut self, protocol_version: u32) -> &mut Self {
-        let meta = ScEnvMetaEntry::ScEnvMetaKindInterfaceVersion(
-            soroban_env_common::meta::make_interface_version(protocol_version, 0),
-        );
+        let meta = ScEnvMetaEntry::ScEnvMetaKindInterfaceVersion(ScEnvMetaEntryInterfaceVersion {
+            protocol: protocol_version,
+            pre_release: 0,
+        });
         self.custom_section(
             soroban_env_common::meta::ENV_META_V0_SECTION_NAME,
             &meta.to_xdr(Limits::none()).unwrap(),
@@ -133,9 +134,7 @@ impl ModEmitter {
     pub fn add_test_protocol_version_meta(&mut self) -> &mut Self {
         let protocol_version = env::var("TEST_PROTOCOL")
             .map(|v| u32::from_str(&v).unwrap())
-            .unwrap_or(soroban_env_common::meta::get_ledger_protocol_version(
-                soroban_env_common::meta::INTERFACE_VERSION,
-            ));
+            .unwrap_or(soroban_env_common::meta::INTERFACE_VERSION.protocol);
         self.add_protocol_version_meta(protocol_version)
     }
 
@@ -386,50 +385,11 @@ impl ModEmitter {
     /// Finish emitting code, consuming the `self`, serializing a WASM binary
     /// blob, validating and returning it. Panics the resulting blob fails
     /// validation.
-    pub fn finish(mut self) -> Vec<u8> {
-        // NB: these sections must be emitted in this order, by spec.
-        if !self.types.is_empty() {
-            self.module.section(&self.types);
-        }
-        if !self.imports.is_empty() {
-            self.module.section(&self.imports);
-        }
-        if !self.funcs.is_empty() {
-            self.module.section(&self.funcs);
-        }
-        if !self.tables.is_empty() {
-            self.module.section(&self.tables);
-        }
-        if !self.memories.is_empty() {
-            self.module.section(&self.memories);
-        }
-        if !self.globals.is_empty() {
-            self.module.section(&self.globals);
-        }
-        if !self.exports.is_empty() {
-            self.module.section(&self.exports);
-        }
-        if !self.elements.is_empty() {
-            self.module.section(&self.elements);
-        }
-        if let Some(data_count) = self.data_count {
-            self.module.section(&data_count);
-        }
-        if !self.codes.is_empty() {
-            self.module.section(&self.codes);
-        }
-        if !self.data.is_empty() {
-            self.module.section(&self.data);
-        }
-        let bytes = self.module.finish();
-        match wasmparser::validate(bytes.as_slice()) {
-            Ok(_) => bytes,
-            Err(ty) => panic!("invalid WASM module: {:?}", ty.message()),
-        }
+    pub fn finish(self) -> Vec<u8> {
+        self.finish_maybe_validate(true)
     }
 
-    #[cfg(feature = "adversarial")]
-    pub fn finish_no_validate(mut self) -> Vec<u8> {
+    fn finish_maybe_validate(mut self, validate: bool) -> Vec<u8> {
         // NB: these sections must be emitted in this order, by spec.
         if !self.types.is_empty() {
             self.module.section(&self.types);
@@ -452,6 +412,7 @@ impl ModEmitter {
         if !self.exports.is_empty() {
             self.module.section(&self.exports);
         }
+        #[cfg(feature = "adversarial")]
         if let Some(start) = self.start {
             self.module.section(&start);
         }
@@ -467,7 +428,19 @@ impl ModEmitter {
         if !self.data.is_empty() {
             self.module.section(&self.data);
         }
+        let bytes = self.module.finish();
+        if validate {
+            match wasmparser::validate(bytes.as_slice()) {
+                Ok(_) => bytes,
+                Err(ty) => panic!("invalid WASM module: {:?}", ty.message()),
+            }
+        } else {
+            bytes
+        }
+    }
 
-        self.module.finish()
+    #[cfg(feature = "adversarial")]
+    pub fn finish_no_validate(self) -> Vec<u8> {
+        self.finish_maybe_validate(false)
     }
 }

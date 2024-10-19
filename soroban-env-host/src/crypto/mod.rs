@@ -1,4 +1,4 @@
-use super::metered_clone::MeteredContainer;
+use crate::host::metered_clone::MeteredContainer;
 use crate::host::prng::SEED_BYTES;
 use crate::{
     budget::AsBudget,
@@ -17,6 +17,7 @@ use sha3::Keccak256;
 use ecdsa::{signature::hazmat::PrehashVerifier, PrimeCurve, Signature, SignatureSize};
 use elliptic_curve::CurveArithmetic;
 use generic_array::ArrayLength;
+pub(crate) mod bls12_381;
 
 impl Host {
     // Ed25519 functions
@@ -328,7 +329,7 @@ pub(crate) fn chacha20_fill_bytes(
     dest: &mut [u8],
     budget: impl AsBudget,
 ) -> Result<(), HostError> {
-    tracy_span!("chacha20");
+    let _span = tracy_span!("chacha20");
     budget
         .as_budget()
         .charge(ContractCostType::ChaCha20DrawBytes, Some(dest.len() as u64))?;
@@ -353,7 +354,7 @@ pub(crate) fn unbias_prng_seed(
     seed: &[u8; SEED_BYTES as usize],
     budget: impl AsBudget,
 ) -> Result<[u8; SEED_BYTES as usize], HostError> {
-    tracy_span!("unbias_prng_seed");
+    let _span = tracy_span!("unbias_prng_seed");
 
     // Salt is fixed and must not be changed; it is effectively "part of the
     // protocol" and must be the same for all implementations.

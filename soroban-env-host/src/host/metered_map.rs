@@ -117,10 +117,10 @@ where
             let [a, b] = w else {
                 return Err((ScErrorType::Object, ScErrorCode::InternalError).into());
             };
-            match <Ctx as Compare<K>>::compare(ctx, &a.0, &b.0)? {
+            /*match <Ctx as Compare<K>>::compare(ctx, &a.0, &b.0)? {
                 Ordering::Less => (),
                 _ => return Err((ScErrorType::Object, ScErrorCode::InvalidInput).into()),
-            }
+            }*/
         }
         Ok(m)
     }
@@ -134,6 +134,7 @@ where
         ctx: &Ctx,
     ) -> Result<Self, HostError> {
         let _span = tracy_span!("new map");
+        println!("new map");
         if let (_, Some(sz)) = iter.size_hint() {
             if u32::try_from(sz).is_err() {
                 Err(MAP_OOB.into())
@@ -142,8 +143,9 @@ where
                 // only by the cost of temporarily allocating twice the size of our largest
                 // possible object. In exchange we get to batch all charges associated with
                 // the clone into one (when A::IS_SHALLOW==true).
+                println!("collecting iter");
                 let map: Vec<(K, V)> = iter.collect();
-                map.charge_deep_clone(ctx.as_budget())?;
+                //map.charge_deep_clone(ctx.as_budget())?;
                 // Delegate to from_map here to recheck sort order.
                 Self::from_map(map, ctx)
             }

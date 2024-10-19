@@ -43,7 +43,13 @@ members = [
     "hostile_large_val",
     "contract_sac_transfer",
     "sum_i32",
-    "deployer"
+    "deployer",
+    "constructor",
+    "no_arg_constructor",
+    "deployer_with_constructor",
+    "constructor_with_return_value",
+    "constructor_with_result",
+    "custom_account_context"
 ]
 [profile.release]
 opt-level = "z"
@@ -56,14 +62,14 @@ codegen-units = 1
 lto = true
 
 [workspace.package]
-rust-version = "1.74.0"
+rust-version = "1.79.0"
 
 [workspace.dependencies.soroban-sdk]
 version = "=21.4.0"
 # git = "https://github.com/stellar/rs-soroban-sdk"
 
 [workspace.dependencies.soroban-env-common]
-version = "=21.2.0"
+version = "=22.0.0-rc.1"
 # git = "https://github.com/stellar/rs-soroban-env"
 
 # Always build from the local instance of env as we need to rebuild test Wasms
@@ -80,4 +86,4 @@ soroban-env-host = { path = "../../soroban-env-host" }
 soroban-sdk = { path = "../../../rs-soroban-sdk/soroban-sdk" }
 
 # [patch."https://github.com/stellar/rs-stellar-xdr"]
-# stellar-xdr = { path = "../../../rs-stellar-xdr/" }
+stellar-xdr = { path = "../../../rs-stellar-xdr/" }
