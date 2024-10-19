@@ -114,7 +114,7 @@ where
         };
         m.charge_scan(ctx)?;
         for w in m.map.as_slice().windows(2) {
-            let [a, b] = w else {
+            let [_a, _b] = w else {
                 return Err((ScErrorType::Object, ScErrorCode::InternalError).into());
             };
             /*match <Ctx as Compare<K>>::compare(ctx, &a.0, &b.0)? {
