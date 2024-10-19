@@ -29,7 +29,7 @@ soroban-env-common = { package = "soroban-env-common-zephyr", version = "=21.2.2
 soroban-env-guest = { version = "=21.2.2", path = "soroban-env-guest" }
 soroban-env-host = { package = "soroban-env-host-zephyr", version = "=21.2.2", path = "soroban-env-host" }
 soroban-env-macros = { package = "soroban-env-macros-zephyr", version = "=21.2.2", path = "soroban-env-macros" }
-soroban-builtin-sdk-macros = { version = "=21.2.2", path = "soroban-builtin-sdk-macros" }
+soroban-builtin-sdk-macros = { version = "=21.2.1", path = "soroban-builtin-sdk-macros" }
 # NB: this must match the wasmparser version wasmi is using
 wasmparser = "=0.116.1"
 
