@@ -369,7 +369,7 @@ impl Host {
             },
         )?;
 
-        println!("Scanned");
+        
         // Step 2: extract all val Vals.
         let vals_pos: u32 = vals_pos.into();
         Vec::<Val>::charge_bulk_init_cpy(len as u64, self)?;
@@ -395,12 +395,8 @@ impl Host {
             .map(|s| s.to_val())
             .zip(vals.iter().cloned());
 
-            println!("keys {:?}", key_syms);
-            println!("vals {:?}", vals);
-
         let map = HostMap::from_exact_iter(pair_iter, self);
         
-        println!("map {:?}", map.clone().err());
         self.add_host_object(map?)
     }
 
