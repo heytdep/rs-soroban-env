@@ -142,6 +142,8 @@ pub fn simulate_invoke_host_function_op(
     };
 
     let mut diagnostic_events = vec![];
+    
+    println!("invoke_host_function_in_recording_mode");
     let recording_result = invoke_host_function_in_recording_mode(
         &budget,
         enable_diagnostics,
