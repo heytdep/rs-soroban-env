@@ -838,6 +838,8 @@ impl Host {
             ));
         }
 
+        println!("Internal called");
+
         if !matches!(call_params.reentry_mode, ContractReentryMode::Allowed) {
             let reentry_distance = self
                 .try_borrow_context_stack()?
@@ -1022,6 +1024,7 @@ impl Host {
                             &[],
                         ));
                     };
+                    
                     let function_name: Symbol = invoke_args.function_name.try_into_val(self)?;
                     let args = self.scvals_to_val_vec(invoke_args.args.as_slice())?;
                     self.call_n_internal(
