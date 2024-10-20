@@ -133,6 +133,8 @@ pub fn simulate_invoke_host_function_op(
     base_prng_seed: [u8; 32],
     enable_diagnostics: bool,
 ) -> Result<InvokeHostFunctionSimulationResult> {
+    println!("Simulating from rs-soroban-env");
+
     let (budget, network_config) = if let Some(configs) = network_config {
         (configs.create_budget()?, configs)
     } else {
