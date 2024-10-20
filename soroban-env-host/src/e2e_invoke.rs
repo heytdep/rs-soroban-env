@@ -527,6 +527,7 @@ pub fn invoke_host_function_in_recording_mode(
     if enable_diagnostics {
         host.set_diagnostic_level(DiagnosticLevel::Debug)?;
     }
+    println!("Invoking host function in recording mode");
     let invoke_result = host.invoke_function(host_function);
     let mut contract_events_and_return_value_size = 0_u32;
     if let Ok(res) = &invoke_result {
