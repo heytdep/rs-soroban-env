@@ -793,6 +793,10 @@ impl Host {
         // allow it in production because it risks replaying an old contract
         // with the new VM and thereby (subtly!) replaying its execution costs
         // wrong.
+        
+        // NOTE: We don't care about the svm version for Zephyr.
+        
+        /*
         #[cfg(not(test))]
         if proto < MIN_LEDGER_PROTOCOL_VERSION {
             return Err(self.err(
@@ -810,6 +814,7 @@ impl Host {
                 &[proto.into()],
             ));
         }
+        */
         Ok(())
     }
 
