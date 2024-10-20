@@ -521,7 +521,8 @@ pub fn invoke_host_function_in_recording_mode(
     println!("Making xdr roundtrips");
     
     host.set_source_account(source_account)?;
-    println!("set ledger info");
+    println!("set ledger info {:?} {:?}", host.try_borrow_ledger_mut(), ledger_info);
+    
     host.set_ledger_info(ledger_info)?;
     println!("set seed");
     host.set_base_prng_seed(base_prng_seed)?;
