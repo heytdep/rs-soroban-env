@@ -63,17 +63,17 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - run: rustup update
-    - uses: stellar/binaries@v24
+    - uses: stellar/binaries@v29
       with:
         name: cargo-semver-checks
-        version: 0.32.0
+        version: 0.35.0
     - run: cargo semver-checks --exclude soroban-simulation
 
   build-and-test:
     strategy:
       matrix:
         rust: [msrv, latest]
-        test-protocol: [20, 21]
+        test-protocol: [22]
         sys:
         - os: ubuntu-latest
           target: wasm32-unknown-unknown

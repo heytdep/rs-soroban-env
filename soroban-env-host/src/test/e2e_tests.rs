@@ -1,7 +1,6 @@
 use crate::builtin_contracts::testutils::AccountContractSigner;
 use crate::e2e_testutils::{account_entry, bytes_sc_val, upload_wasm_host_fn};
 use crate::testutils::simple_account_sign_fn;
-use crate::vm::ModuleCache;
 use crate::{
     budget::Budget,
     builtin_contracts::testutils::TestSigner,
@@ -21,8 +20,8 @@ use crate::{
         ExtensionPoint, HashIdPreimage, HashIdPreimageSorobanAuthorization, HostFunction,
         InvokeContractArgs, LedgerEntry, LedgerEntryData, LedgerFootprint, LedgerKey,
         LedgerKeyContractCode, LedgerKeyContractData, Limits, ReadXdr, ScAddress, ScErrorCode,
-        ScErrorType, ScVal, ScVec, SorobanAuthorizationEntry, SorobanCredentials, SorobanResources,
-        TtlEntry, Uint256, WriteXdr,
+        ScErrorType, ScMap, ScVal, ScVec, SorobanAuthorizationEntry, SorobanCredentials,
+        SorobanResources, TtlEntry, Uint256, WriteXdr,
     },
     Host, HostError, LedgerInfo,
 };
@@ -34,7 +33,8 @@ use sha2::{Digest, Sha256};
 use soroban_env_common::TryIntoVal;
 use soroban_test_wasms::{
     ADD_F32, ADD_I32, AUTH_TEST_CONTRACT, CONTRACT_STORAGE, DEPLOYER_TEST_CONTRACT, LINEAR_MEMORY,
-    SIMPLE_ACCOUNT_CONTRACT, SUM_I32, UPDATEABLE_CONTRACT,
+    NO_ARGUMENT_CONSTRUCTOR_TEST_CONTRACT_P22, SIMPLE_ACCOUNT_CONTRACT, SUM_I32,
+    UPDATEABLE_CONTRACT,
 };
 use std::rc::Rc;
 
@@ -239,7 +239,7 @@ fn invoke_host_function_helper(
                     LedgerKey::ContractData(LedgerKeyContractData {
                         contract: cd.contract.clone(),
                         key: cd.key.clone(),
-                        durability: cd.durability.clone(),
+                        durability: cd.durability,
                     })
                 }
                 LedgerEntryData::ContractCode(code) => {
@@ -313,7 +313,7 @@ fn invoke_host_function_recording_helper(
         auth_entries,
         ledger_info.clone(),
         snapshot,
-        prng_seed.clone(),
+        *prng_seed,
         &mut diagnostic_events,
     )?;
     Ok(InvokeHostFunctionRecordingHelperResult {
@@ -611,6 +611,32 @@ fn test_wasm_upload_success() {
 }
 
 #[test]
+fn test_wasm_upload_failure_due_to_unsupported_wasm_features() {
+    let ledger_key = get_wasm_key(ADD_F32);
+    let ledger_info = default_ledger_info();
+
+    let res = invoke_host_function_helper(
+        false,
+        &upload_wasm_host_fn(ADD_F32),
+        &resources(10_000_000, vec![], vec![ledger_key.clone()]),
+        &get_account_id([123; 32]),
+        vec![],
+        &ledger_info,
+        vec![],
+        &prng_seed(),
+    )
+    .unwrap();
+    assert!(res.budget.get_cpu_insns_consumed().unwrap() > 0);
+    assert!(res.budget.get_mem_bytes_consumed().unwrap() > 0);
+
+    assert!(res.invoke_result.is_err());
+    assert!(HostError::result_matches_err(
+        res.invoke_result,
+        (ScErrorType::WasmVm, ScErrorCode::InvalidAction)
+    ));
+}
+
+#[test]
 fn test_wasm_upload_success_in_recording_mode() {
     let ledger_key = get_wasm_key(ADD_I32);
     let ledger_info = default_ledger_info();
@@ -649,12 +675,7 @@ fn test_wasm_upload_success_in_recording_mode() {
         }]
     );
     assert!(res.auth.is_empty());
-    let (expected_insns, expected_write_bytes) =
-        if ledger_info.protocol_version >= ModuleCache::MIN_LEDGER_VERSION {
-            (1767136, 684)
-        } else {
-            (1060474, 636)
-        };
+    let (expected_insns, expected_write_bytes) = (1767136, 684);
     assert_eq!(
         res.resources,
         SorobanResources {
@@ -692,11 +713,7 @@ fn test_wasm_upload_failure_in_recording_mode() {
     ));
     assert!(res.ledger_changes.is_empty());
     assert!(res.auth.is_empty());
-    let expected_instructions = if ledger_info.protocol_version >= ModuleCache::MIN_LEDGER_VERSION {
-        1093647
-    } else {
-        1093647
-    };
+    let expected_instructions = 1093647;
     assert_eq!(
         res.resources,
         SorobanResources {
@@ -709,6 +726,29 @@ fn test_wasm_upload_failure_in_recording_mode() {
             write_bytes: 0,
         }
     );
+}
+
+#[test]
+fn test_unsupported_wasm_upload_failure_in_recording_mode() {
+    let ledger_info = default_ledger_info();
+
+    let res = invoke_host_function_recording_helper(
+        true,
+        &upload_wasm_host_fn(ADD_F32),
+        &get_account_id([123; 32]),
+        None,
+        &ledger_info,
+        vec![],
+        &prng_seed(),
+        None,
+    )
+    .unwrap();
+    assert!(res.diagnostic_events.len() >= 1);
+    assert!(res.contract_events.is_empty());
+    assert!(HostError::result_matches_err(
+        res.invoke_result,
+        (ScErrorType::WasmVm, ScErrorCode::InvalidAction)
+    ));
 }
 
 #[test]
@@ -984,6 +1024,123 @@ fn test_create_contract_success() {
 }
 
 #[test]
+fn test_create_contract_with_no_argument_constructor_success() {
+    let cd = CreateContractData::new([111; 32], NO_ARGUMENT_CONSTRUCTOR_TEST_CONTRACT_P22);
+    let ledger_info = default_ledger_info();
+    let persistent_entry_key = contract_data_key(
+        &cd.contract_address,
+        &symbol_sc_val("key"),
+        ContractDataDurability::Persistent,
+    );
+    let temp_entry_key = contract_data_key(
+        &cd.contract_address,
+        &symbol_sc_val("key"),
+        ContractDataDurability::Temporary,
+    );
+    let res = invoke_host_function_helper(
+        true,
+        &cd.host_fn,
+        &resources(
+            10_000_000,
+            vec![cd.wasm_key.clone()],
+            vec![
+                cd.contract_key.clone(),
+                persistent_entry_key.clone(),
+                temp_entry_key.clone(),
+            ],
+        ),
+        &cd.deployer,
+        vec![cd.auth_entry],
+        &ledger_info,
+        vec![(
+            cd.wasm_entry.clone(),
+            Some(ledger_info.sequence_number + 100),
+        )],
+        &prng_seed(),
+    )
+    .unwrap();
+    assert_eq!(
+        res.invoke_result.unwrap(),
+        ScVal::Address(cd.contract_address.clone())
+    );
+    assert!(res.contract_events.is_empty());
+    let mut expected_contract_entry = cd.contract_entry.clone();
+    if let LedgerEntryData::ContractData(cd) = &mut expected_contract_entry.data {
+        if let ScVal::ContractInstance(instance) = &mut cd.val {
+            instance.storage =
+                Some(ScMap::sorted_from(vec![(symbol_sc_val("key"), u32_sc_val(2))]).unwrap());
+        } else {
+            unreachable!();
+        }
+    } else {
+        unreachable!();
+    };
+    assert_eq!(
+        res.ledger_changes,
+        vec![
+            LedgerEntryChangeHelper {
+                read_only: false,
+                key: temp_entry_key.clone(),
+                old_entry_size_bytes: 0,
+                new_value: Some(contract_data_entry(
+                    &cd.contract_address,
+                    &symbol_sc_val("key"),
+                    &u32_sc_val(3),
+                    ContractDataDurability::Temporary
+                )),
+                ttl_change: Some(LedgerEntryLiveUntilChange {
+                    key_hash: compute_key_hash(&temp_entry_key),
+                    durability: ContractDataDurability::Temporary,
+                    old_live_until_ledger: 0,
+                    new_live_until_ledger: ledger_info.sequence_number
+                        + ledger_info.min_temp_entry_ttl
+                        - 1,
+                }),
+            },
+            LedgerEntryChangeHelper {
+                read_only: false,
+                key: persistent_entry_key.clone(),
+                old_entry_size_bytes: 0,
+                new_value: Some(contract_data_entry(
+                    &cd.contract_address,
+                    &symbol_sc_val("key"),
+                    &u32_sc_val(1),
+                    ContractDataDurability::Persistent
+                )),
+                ttl_change: Some(LedgerEntryLiveUntilChange {
+                    key_hash: compute_key_hash(&persistent_entry_key),
+                    durability: ContractDataDurability::Persistent,
+                    old_live_until_ledger: 0,
+                    new_live_until_ledger: ledger_info.sequence_number
+                        + ledger_info.min_persistent_entry_ttl
+                        - 1,
+                }),
+            },
+            LedgerEntryChangeHelper {
+                read_only: false,
+                key: cd.contract_key.clone(),
+                old_entry_size_bytes: 0,
+                new_value: Some(expected_contract_entry),
+                ttl_change: Some(LedgerEntryLiveUntilChange {
+                    key_hash: compute_key_hash(&cd.contract_key),
+                    durability: ContractDataDurability::Persistent,
+                    old_live_until_ledger: 0,
+                    new_live_until_ledger: ledger_info.sequence_number
+                        + ledger_info.min_persistent_entry_ttl
+                        - 1,
+                }),
+            },
+            LedgerEntryChangeHelper::no_op_change(
+                &cd.wasm_entry,
+                ledger_info.sequence_number + 100
+            ),
+        ]
+    );
+    assert!(res.budget.get_cpu_insns_consumed().unwrap() > 0);
+    assert!(res.budget.get_mem_bytes_consumed().unwrap() > 0);
+}
+
+#[test]
 fn test_create_contract_success_in_recording_mode() {
     let cd = CreateContractData::new([111; 32], ADD_I32);
     let ledger_info = default_ledger_info();
@@ -1030,12 +1187,6 @@ fn test_create_contract_success_in_recording_mode() {
         ]
     );
     assert_eq!(res.auth, vec![cd.auth_entry]);
-    let (expected_insns, expected_read_bytes) =
-        if ledger_info.protocol_version >= ModuleCache::MIN_LEDGER_VERSION {
-            (453719, 684)
-        } else {
-            (449458, 636)
-        };
     assert_eq!(
         res.resources,
         SorobanResources {
@@ -1043,8 +1194,8 @@ fn test_create_contract_success_in_recording_mode() {
                 read_only: vec![cd.wasm_key].try_into().unwrap(),
                 read_write: vec![cd.contract_key].try_into().unwrap()
             },
-            instructions: expected_insns,
-            read_bytes: expected_read_bytes,
+            instructions: 831711,
+            read_bytes: 684,
             write_bytes: 104,
         }
     );
@@ -1097,12 +1248,6 @@ fn test_create_contract_success_in_recording_mode_with_enforced_auth() {
         ]
     );
     assert_eq!(res.auth, vec![cd.auth_entry]);
-    let (expected_insns, expected_read_bytes) =
-        if ledger_info.protocol_version >= ModuleCache::MIN_LEDGER_VERSION {
-            (455160, 684)
-        } else {
-            (450899, 636)
-        };
     assert_eq!(
         res.resources,
         SorobanResources {
@@ -1110,8 +1255,8 @@ fn test_create_contract_success_in_recording_mode_with_enforced_auth() {
                 read_only: vec![cd.wasm_key].try_into().unwrap(),
                 read_write: vec![cd.contract_key].try_into().unwrap()
             },
-            instructions: expected_insns,
-            read_bytes: expected_read_bytes,
+            instructions: 833156,
+            read_bytes: 684,
             write_bytes: 104,
         }
     );
@@ -1142,7 +1287,7 @@ fn test_create_contract_success_using_simulation() {
 #[test]
 fn test_create_contract_success_with_extra_footprint_entries() {
     let cd = CreateContractData::new([111; 32], ADD_I32);
-    let cd2 = CreateContractData::new([222; 32], ADD_F32);
+    let cd2 = CreateContractData::new([222; 32], CONTRACT_STORAGE);
     let ledger_info = default_ledger_info();
     let res = invoke_host_function_helper(
         true,
@@ -1531,12 +1676,6 @@ fn test_invoke_contract_with_storage_ops_success_in_recording_mode() {
             wasm_entry_change.clone()
         ]
     );
-    let (expected_insns, expected_read_bytes) =
-        if ledger_info.protocol_version >= ModuleCache::MIN_LEDGER_VERSION {
-            (1431216, 3132)
-        } else {
-            (2221742, 3084)
-        };
     assert_eq!(
         res.resources,
         SorobanResources {
@@ -1546,8 +1685,8 @@ fn test_invoke_contract_with_storage_ops_success_in_recording_mode() {
                     .unwrap(),
                 read_write: vec![data_key.clone()].try_into().unwrap(),
             },
-            instructions: expected_insns,
-            read_bytes: expected_read_bytes,
+            instructions: 1431216,
+            read_bytes: 3132,
             write_bytes: 80,
         }
     );
@@ -1599,12 +1738,6 @@ fn test_invoke_contract_with_storage_ops_success_in_recording_mode() {
             wasm_entry_change.clone()
         ]
     );
-    let (expected_insns, expected_read_bytes) =
-        if ledger_info.protocol_version >= ModuleCache::MIN_LEDGER_VERSION {
-            (1543254, 3212)
-        } else {
-            (2333780, 3164)
-        };
     assert_eq!(
         extend_res.resources,
         SorobanResources {
@@ -1618,8 +1751,8 @@ fn test_invoke_contract_with_storage_ops_success_in_recording_mode() {
                 .unwrap(),
                 read_write: Default::default(),
             },
-            instructions: expected_insns,
-            read_bytes: expected_read_bytes,
+            instructions: 1543254,
+            read_bytes: 3212,
             write_bytes: 0,
         }
     );

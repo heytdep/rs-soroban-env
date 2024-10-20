@@ -20,24 +20,23 @@ exclude = ["soroban-test-wasms/wasm-workspace"]
 # NB: When bumping the major version make sure to clean up the
 # code guarded by `unstable-*` features to make it enabled
 # unconditionally.
-
-version = "21.2.1"
-rust-version = "1.74.0"
+version = "22.0.0-rc.2"
+rust-version = "1.79.0"
 
 [workspace.dependencies]
-soroban-env-common = { package = "soroban-env-common-zephyr", version = "=21.2.0", path = "soroban-env-common", default-features = false }
-soroban-env-guest = { version = "=21.2.0", path = "soroban-env-guest" }
-soroban-env-host = { package = "soroban-env-host-zephyr", version = "=21.2.1", path = "soroban-env-host" }
-soroban-env-macros = { package = "soroban-env-macros-zephyr", version = "=21.2.1", path = "soroban-env-macros" }
-soroban-builtin-sdk-macros = { version = "=21.2.0", path = "soroban-builtin-sdk-macros" }
+soroban-env-common = { package = "soroban-env-common-zephyr", version = "=22.0.0-rc.2", path = "soroban-env-common", default-features = false }
+soroban-env-guest = { version = "=22.0.0-rc.2", path = "soroban-env-guest" }
+soroban-env-host = { package = "soroban-env-host-zephyr", version = "=22.0.0-rc.2", path = "soroban-env-host" }
+soroban-env-macros = { package = "soroban-env-macros-zephyr", version = "=22.0.0-rc.2", path = "soroban-env-macros" }
+soroban-builtin-sdk-macros = { version = "=22.0.0-rc.2", path = "soroban-builtin-sdk-macros" }
 # NB: this must match the wasmparser version wasmi is using
 wasmparser = "=0.116.1"
 
 # NB: When updating, also update the version in rs-soroban-env dev-dependencies
 [workspace.dependencies.stellar-xdr]
-version = "=21.2.0"
-# git = "https://github.com/stellar/rs-stellar-xdr"
-# rev = "d0138770652a615e3cd99447f2f2727658c17450"
+version = "=22.0.0-rc.1.1"
+#git = "https://github.com/stellar/rs-stellar-xdr"
+#rev = "67be5955a15f1d3a4df83fe86e6ae107f687141b"
 default-features = false
 
 [workspace.dependencies.wasmi]
@@ -47,7 +46,8 @@ git = "https://github.com/stellar/wasmi"
 rev = "0ed3f3dee30dc41ebe21972399e0a73a41944aa0"
 
 # [patch."https://github.com/stellar/rs-stellar-xdr"]
-# stellar-xdr = { path = "../rs-stellar-xdr/" }
+# [patch.crates-io]
+# stellar-xdr = { path = "../rs-stellar-xdr" }
 # [patch."https://github.com/stellar/wasmi"]
 # soroban-wasmi = { path = "../wasmi/crates/wasmi/" }
 # soroban-wasmi_core = { path = "../wasmi/crates/core/" }

@@ -12,7 +12,7 @@ use soroban_env_host::{
     ledger_info::get_key_durability,
     storage::SnapshotSource,
     xdr::{
-        BytesM, ContractDataDurability, DecoratedSignature, Duration, ExtensionPoint, Hash,
+        BytesM, ContractDataDurability, DecoratedSignature, Duration, SorobanTransactionDataExt, Hash,
         LedgerBounds, LedgerFootprint, LedgerKey, Limits, Memo, MuxedAccount, MuxedAccountMed25519,
         Operation, OperationBody, Preconditions, PreconditionsV2, ReadXdr, SequenceNumber,
         Signature, SignatureHint, SignerKey, SignerKeyEd25519SignedPayload, SorobanResources,
@@ -300,7 +300,7 @@ fn estimate_max_transaction_size_for_operation(
                     write_bytes: 0,
                 },
                 resource_fee: 0,
-                ext: ExtensionPoint::V0,
+                ext: SorobanTransactionDataExt::V0,
             }),
         },
         signatures: signatures.try_into()?,

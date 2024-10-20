@@ -9,6 +9,7 @@ use crate::snapshot_source::{
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use soroban_env_host::budget::Budget;
+
 use soroban_env_host::{
     e2e_invoke::invoke_host_function_in_recording_mode,
     e2e_invoke::LedgerEntryChange,
@@ -17,7 +18,7 @@ use soroban_env_host::{
         AccountId, ContractEvent, DiagnosticEvent, HostFunction, InvokeHostFunctionOp, LedgerKey,
         OperationBody, ScVal, SorobanAuthorizationEntry, SorobanResources, SorobanTransactionData,
     },
-    xdr::{ExtendFootprintTtlOp, ExtensionPoint, LedgerEntry, ReadXdr, RestoreFootprintOp},
+    xdr::{ExtendFootprintTtlOp, ExtensionPoint, SorobanTransactionDataExt, LedgerEntry, ReadXdr, RestoreFootprintOp},
     LedgerInfo, DEFAULT_XDR_RW_LIMITS,
 };
 use soroban_env_host::{Host, TryFromVal};
@@ -139,6 +140,7 @@ pub fn simulate_invoke_host_function_op(
     };
 
     let mut diagnostic_events = vec![];
+    
     let recording_result = invoke_host_function_in_recording_mode(
         &budget,
         enable_diagnostics,
@@ -345,9 +347,9 @@ fn create_transaction_data(
     resource_fee: i64,
 ) -> SorobanTransactionData {
     SorobanTransactionData {
-        resources,
-        resource_fee,
-        ext: ExtensionPoint::V0,
+        resources: SorobanResources { footprint: resources.footprint, instructions: resources.instructions + 10000, read_bytes: resources.read_bytes + 100, write_bytes: resources.read_bytes + 100 },
+        resource_fee: resource_fee + 100500,
+        ext: SorobanTransactionDataExt::V0,
     }
 }
 
