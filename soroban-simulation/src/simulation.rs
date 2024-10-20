@@ -133,8 +133,6 @@ pub fn simulate_invoke_host_function_op(
     base_prng_seed: [u8; 32],
     enable_diagnostics: bool,
 ) -> Result<InvokeHostFunctionSimulationResult> {
-    println!("Simulating from rs-soroban-env");
-
     let (budget, network_config) = if let Some(configs) = network_config {
         (configs.create_budget()?, configs)
     } else {
@@ -143,7 +141,6 @@ pub fn simulate_invoke_host_function_op(
 
     let mut diagnostic_events = vec![];
     
-    println!("invoke_host_function_in_recording_mode");
     let recording_result = invoke_host_function_in_recording_mode(
         &budget,
         enable_diagnostics,

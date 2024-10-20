@@ -513,19 +513,10 @@ pub fn invoke_host_function_in_recording_mode(
     let host = Host::with_storage_and_budget(storage, budget.clone());
     let is_recording_auth = auth_entries.is_none();
     let ledger_seq = ledger_info.sequence_number;
-    
-    println!("Making xdr roundtrip");
     let host_function = host.xdr_roundtrip(host_fn)?;
     let source_account: AccountId = host.xdr_roundtrip(source_account)?;
-    
-    println!("Making xdr roundtrips");
-    
     host.set_source_account(source_account)?;
-    println!("set ledger info {:?} {:?}", host.try_borrow_ledger_mut(), host.set_ledger_info(ledger_info.clone()));
-    
     host.set_ledger_info(ledger_info)?;
-    
-    println!("set seed");
     host.set_base_prng_seed(base_prng_seed)?;
 
     if let Some(auth_entries) = &auth_entries {
@@ -537,7 +528,7 @@ pub fn invoke_host_function_in_recording_mode(
     if enable_diagnostics {
         host.set_diagnostic_level(DiagnosticLevel::Debug)?;
     }
-    println!("Invoking host function in recording mode");
+
     let invoke_result = host.invoke_function(host_function);
     let mut contract_events_and_return_value_size = 0_u32;
     if let Ok(res) = &invoke_result {

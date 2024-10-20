@@ -822,7 +822,6 @@ impl Host {
         args: &[Val],
         call_params: CallParams,
     ) -> Result<Val, HostError> {
-        println!("Internal calling");
         // Internal host calls may call some special functions that otherwise
         // aren't allowed to be called.
         if !call_params.internal_host_call
@@ -838,8 +837,6 @@ impl Host {
                 &[func.to_val()],
             ));
         }
-
-        println!("Internal called");
 
         if !matches!(call_params.reentry_mode, ContractReentryMode::Allowed) {
             let reentry_distance = self
@@ -1026,8 +1023,6 @@ impl Host {
                         ));
                     };
                     
-                    println!("from return val");
-
                     let function_name: Symbol = invoke_args.function_name.try_into_val(self)?;
                     let args = self.scvals_to_val_vec(invoke_args.args.as_slice())?;
                     self.call_n_internal(
