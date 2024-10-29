@@ -347,8 +347,8 @@ fn create_transaction_data(
     resource_fee: i64,
 ) -> SorobanTransactionData {
     SorobanTransactionData {
-        resources: SorobanResources { footprint: resources.footprint, instructions: resources.instructions + 10000, read_bytes: resources.read_bytes + 100, write_bytes: resources.read_bytes + 100 },
-        resource_fee: resource_fee + 100500,
+        resources: SorobanResources { footprint: resources.footprint, instructions: resources.instructions + 10000, read_bytes: resources.read_bytes + 200, write_bytes: resources.read_bytes + 200 },
+        resource_fee: resource_fee + 130500,
         ext: SorobanTransactionDataExt::V0,
     }
 }
