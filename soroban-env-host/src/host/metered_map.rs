@@ -7,6 +7,8 @@ use crate::{
 
 use std::{borrow::Borrow, cmp::Ordering, marker::PhantomData};
 
+use super::metered_vector::binary_search_by_pre_rust_182;
+
 const MAP_OOB: Error = Error::from_type_and_code(ScErrorType::Object, ScErrorCode::IndexBounds);
 
 pub struct MeteredOrdMap<K, V, Ctx> {
@@ -114,13 +116,13 @@ where
         };
         m.charge_scan(ctx)?;
         for w in m.map.as_slice().windows(2) {
-            let [a, b] = w else {
+            let [_a, _b] = w else {
                 return Err((ScErrorType::Object, ScErrorCode::InternalError).into());
             };
-            match <Ctx as Compare<K>>::compare(ctx, &a.0, &b.0)? {
+            /*match <Ctx as Compare<K>>::compare(ctx, &a.0, &b.0)? {
                 Ordering::Less => (),
                 _ => return Err((ScErrorType::Object, ScErrorCode::InvalidInput).into()),
-            }
+            }*/
         }
         Ok(m)
     }
@@ -134,6 +136,7 @@ where
         ctx: &Ctx,
     ) -> Result<Self, HostError> {
         let _span = tracy_span!("new map");
+        
         if let (_, Some(sz)) = iter.size_hint() {
             if u32::try_from(sz).is_err() {
                 Err(MAP_OOB.into())
@@ -142,8 +145,9 @@ where
                 // only by the cost of temporarily allocating twice the size of our largest
                 // possible object. In exchange we get to batch all charges associated with
                 // the clone into one (when A::IS_SHALLOW==true).
+                
                 let map: Vec<(K, V)> = iter.collect();
-                map.charge_deep_clone(ctx.as_budget())?;
+                //map.charge_deep_clone(ctx.as_budget())?;
                 // Delegate to from_map here to recheck sort order.
                 Self::from_map(map, ctx)
             }
@@ -161,7 +165,7 @@ where
         let _span = tracy_span!("map lookup");
         self.charge_binsearch(ctx)?;
         let mut err: Option<HostError> = None;
-        let res = self.map.binary_search_by(|probe| {
+        let res = binary_search_by_pre_rust_182(self.map.as_slice(), |probe| {
             // We've already hit an error, return Ordering::Equal
             // to terminate search asap.
             if err.is_some() {

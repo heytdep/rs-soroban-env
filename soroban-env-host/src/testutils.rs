@@ -146,9 +146,11 @@ impl SnapshotSource for MockSnapshotSource {
 
 #[cfg(test)]
 pub(crate) fn interface_meta_with_custom_versions(proto: u32, pre: u32) -> Vec<u8> {
-    use crate::xdr::{Limited, Limits, ScEnvMetaEntry, WriteXdr};
-    let iv = crate::meta::make_interface_version(proto, pre);
-    let entry = ScEnvMetaEntry::ScEnvMetaKindInterfaceVersion(iv);
+    use crate::xdr::{Limited, Limits, ScEnvMetaEntry, ScEnvMetaEntryInterfaceVersion, WriteXdr};
+    let entry = ScEnvMetaEntry::ScEnvMetaKindInterfaceVersion(ScEnvMetaEntryInterfaceVersion {
+        protocol: proto,
+        pre_release: pre,
+    });
     let bytes = Vec::<u8>::new();
     let mut w = Limited::new(bytes, Limits::none());
     entry.write_xdr(&mut w).unwrap();
@@ -163,11 +165,30 @@ impl Host {
     }
 
     pub fn current_test_protocol() -> u32 {
-        use crate::meta::{get_ledger_protocol_version, INTERFACE_VERSION};
+        let max_supported_protocol = crate::meta::INTERFACE_VERSION.protocol;
+        let min_supported_protocol = crate::host::MIN_LEDGER_PROTOCOL_VERSION;
         if let Ok(vers) = std::env::var("TEST_PROTOCOL") {
-            vers.parse().unwrap()
+            let test_protocol = vers.parse().expect("parsing TEST_PROTOCOL");
+            if test_protocol >= min_supported_protocol && test_protocol <= max_supported_protocol {
+                test_protocol
+            } else if test_protocol > max_supported_protocol {
+                let next_advice = if cfg!(feature = "next") {
+                    ""
+                } else {
+                    " (consider building with --feature=next)"
+                };
+                panic!(
+                    "TEST_PROTOCOL={} is higher than the max supported protocol {}{}",
+                    test_protocol, max_supported_protocol, next_advice
+                );
+            } else {
+                panic!(
+                    "TEST_PROTOCOL={} is lower than the min supported protocol {}",
+                    test_protocol, min_supported_protocol
+                );
+            }
         } else {
-            get_ledger_protocol_version(INTERFACE_VERSION)
+            max_supported_protocol
         }
     }
 
@@ -268,12 +289,15 @@ impl Host {
         salt: [u8; 32],
     ) -> Result<AddressObject, HostError> {
         let _span = tracy_span!("register_test_contract_wasm_from_source_account");
+        #[cfg(any(test, feature = "testutils"))]
+        let _invocation_meter_scope = self.maybe_meter_invocation()?;
+
         // Use source account-based auth in order to avoid using nonces which
         // won't work well with enforcing ledger footprint.
         let prev_source_account = self.source_account_id()?;
         // Use recording auth to skip specifying the auth payload.
         let prev_auth_manager = self.snapshot_auth_manager()?;
-        self.switch_to_recording_auth(true)?;
+        self.switch_to_recording_auth_inherited_from_snapshot(&prev_auth_manager)?;
 
         let wasm_hash = self.upload_wasm(self.bytes_new_from_slice(contract_wasm)?)?;
         self.set_source_account(account.clone())?;
@@ -707,8 +731,8 @@ pub(crate) mod wasm {
         // we just make sure the total memory can fit one segments the segments
         // will just cycle through the space and possibly override earlier ones
         let max_segments = (mem_len / seg_size.max(1)).max(1);
-        for _i in 0..num_sgmts % max_segments {
-            me.define_data_segment(0, vec![0; seg_size as usize]);
+        for i in 0..num_sgmts % max_segments {
+            me.define_data_segment(i, vec![0; seg_size as usize]);
         }
         // a local wasm function
         let mut fe = me.func(Arity(0), 0);
@@ -735,7 +759,6 @@ pub(crate) mod wasm {
         let num_pages = num_vals * 8 / 0x10_000 + 1;
         let mut me = ModEmitter::from_configs(num_pages, 128);
         let bytes: Vec<u8> = (0..num_vals)
-            .into_iter()
             .map(|_| initial.get_payload().to_le_bytes())
             .flat_map(|a| a.into_iter())
             .collect();
@@ -754,19 +777,16 @@ pub(crate) mod wasm {
         let mut me = ModEmitter::from_configs(num_pages, 128);
 
         let key_bytes: Vec<u8> = (0..num_vals)
-            .into_iter()
             .map(|i| format!("{:0>width$}", i, width = 8))
             .flat_map(|s| s.into_bytes().into_iter())
             .collect();
 
         let val_bytes: Vec<u8> = (0..num_vals)
-            .into_iter()
             .map(|_| initial.get_payload().to_le_bytes())
             .flat_map(|a| a.into_iter())
             .collect();
 
         let slices: Vec<u8> = (0..num_vals)
-            .into_iter()
             .map(|ptr| {
                 let slice = 8_u64 << 32 | (ptr * 8) as u64;
                 slice.to_le_bytes()
@@ -776,8 +796,8 @@ pub(crate) mod wasm {
 
         let bytes: Vec<u8> = key_bytes
             .into_iter()
-            .chain(val_bytes.into_iter())
-            .chain(slices.into_iter())
+            .chain(val_bytes)
+            .chain(slices)
             .collect();
 
         me.define_data_segment(0, bytes);
@@ -856,7 +876,7 @@ pub(crate) mod wasm {
         let mut me = ModEmitter::new();
         me.memory(1, None, false, false);
         me.memory(1, None, false, false);
-        me.finish()
+        me.finish_no_validate()
     }
 
     pub fn wasm_module_lying_about_import_function_type() -> Vec<u8> {
@@ -878,7 +898,7 @@ pub(crate) mod wasm {
         for _ in 0..n {
             me.import_func_no_check("t", "_", Arity(0));
         }
-        me.finish()
+        me.finish_no_validate()
     }
 
     pub fn wasm_module_with_nonexistent_function_export() -> Vec<u8> {
@@ -917,7 +937,7 @@ pub(crate) mod wasm {
         let me = ModEmitter::default_with_test_protocol();
         let fe = me.func_with_arity_and_ret(Arity(0), Arity(0), 0);
         let (mut me, fid) = fe.finish();
-        me.export_func(fid.clone(), "start");
+        me.export_func(fid, "start");
         me.start(fid);
         me.finish_no_validate()
     }

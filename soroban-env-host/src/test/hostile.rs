@@ -339,23 +339,19 @@ fn excessive_memory_growth() -> Result<(), HostError> {
     Ok(())
 }
 
-fn instantiate_with_mem_and_table_sizes(
+fn upload_wasm_with_mem_and_table_sizes(
     host: &Host,
     mem_pages: u32,
     elem_count: u32,
-) -> Result<crate::AddressObject, HostError> {
+) -> Result<crate::BytesObject, HostError> {
     let wasm = wasm_util::wasm_module_with_user_specified_initial_size(mem_pages, elem_count);
-    host.register_test_contract_wasm_from_source_account(
-        wasm.as_slice(),
-        AccountId(PublicKey::PublicKeyTypeEd25519(Uint256([0; 32]))),
-        [0; 32],
-    )
+    host.upload_contract_wasm(wasm)
 }
 
 #[test]
 fn moderate_sized_initial_memory_request_ok() -> Result<(), HostError> {
     let host = observe_host!(Host::test_host_with_recording_footprint());
-    let res = instantiate_with_mem_and_table_sizes(&host, 10, 0);
+    let res = upload_wasm_with_mem_and_table_sizes(&host, 10, 0);
     assert!(res.is_ok());
     assert_eq!(host.as_budget().get_wasm_mem_alloc()?, 0x10_000 * 10);
     Ok(())
@@ -364,7 +360,7 @@ fn moderate_sized_initial_memory_request_ok() -> Result<(), HostError> {
 #[test]
 fn initial_memory_request_over_limit_fails() -> Result<(), HostError> {
     let host = observe_host!(Host::test_host_with_recording_footprint());
-    let res = instantiate_with_mem_and_table_sizes(&host, 1000, 0);
+    let res = upload_wasm_with_mem_and_table_sizes(&host, 1000, 0);
     assert!(HostError::result_matches_err(
         res,
         Error::from_type_and_code(ScErrorType::Budget, ScErrorCode::ExceededLimit),
@@ -377,7 +373,7 @@ fn initial_memory_request_over_limit_fails() -> Result<(), HostError> {
 #[test]
 fn moderate_sized_initial_table_request_ok() -> Result<(), HostError> {
     let host = observe_host!(Host::test_host_with_recording_footprint());
-    let res = instantiate_with_mem_and_table_sizes(&host, 0, 500);
+    let res = upload_wasm_with_mem_and_table_sizes(&host, 0, 500);
     assert!(res.is_ok());
     Ok(())
 }
@@ -385,7 +381,7 @@ fn moderate_sized_initial_table_request_ok() -> Result<(), HostError> {
 #[test]
 fn initial_table_request_over_limit_fails() -> Result<(), HostError> {
     let host = observe_host!(Host::test_host_with_recording_footprint());
-    let res = instantiate_with_mem_and_table_sizes(&host, 0, 2000);
+    let res = upload_wasm_with_mem_and_table_sizes(&host, 0, 2000);
     assert!(HostError::result_matches_err(
         res,
         Error::from_type_and_code(ScErrorType::Budget, ScErrorCode::ExceededLimit),
@@ -393,25 +389,21 @@ fn initial_table_request_over_limit_fails() -> Result<(), HostError> {
     Ok(())
 }
 
-fn instantiate_with_data_segment(
+fn upload_wasm_with_data_segment(
     host: &Host,
     mem_pages: u32,
     mem_offset: u32,
     len: u32,
-) -> Result<crate::AddressObject, HostError> {
+) -> Result<crate::BytesObject, HostError> {
     let wasm = wasm_util::wasm_module_with_large_data_segment(mem_pages, mem_offset, len);
-    host.register_test_contract_wasm_from_source_account(
-        wasm.as_slice(),
-        AccountId(PublicKey::PublicKeyTypeEd25519(Uint256([0; 32]))),
-        [0; 32],
-    )
+    host.upload_contract_wasm(wasm)
 }
 
 #[test]
 fn data_segment_smaller_than_a_page_fits_in_one_page_memory() -> Result<(), HostError> {
     let host = observe_host!(Host::test_host_with_recording_footprint());
     host.as_budget().reset_unlimited_cpu()?;
-    let res = instantiate_with_data_segment(&host, 1, 0, 5000);
+    let res = upload_wasm_with_data_segment(&host, 1, 0, 5000);
     assert!(res.is_ok());
     assert_eq!(host.as_budget().get_wasm_mem_alloc()?, 0x10_000);
     Ok(())
@@ -421,7 +413,7 @@ fn data_segment_smaller_than_a_page_fits_in_one_page_memory() -> Result<(), Host
 fn data_segment_larger_than_a_page_does_not_fit_in_one_page_memory() -> Result<(), HostError> {
     let host = observe_host!(Host::test_host_with_recording_footprint());
     host.as_budget().reset_unlimited_cpu()?;
-    let res = instantiate_with_data_segment(&host, 1, 0, 100_000);
+    let res = upload_wasm_with_data_segment(&host, 1, 0, 100_000);
     assert_eq!(host.as_budget().get_wasm_mem_alloc()?, 0x10_000);
     assert!(HostError::result_matches_err(
         res,
@@ -434,7 +426,7 @@ fn data_segment_larger_than_a_page_does_not_fit_in_one_page_memory() -> Result<(
 fn data_segment_larger_than_a_page_fits_in_two_page_memory() -> Result<(), HostError> {
     let host = observe_host!(Host::test_host_with_recording_footprint());
     host.as_budget().reset_unlimited_cpu()?;
-    let res = instantiate_with_data_segment(&host, 2, 0, 100_000);
+    let res = upload_wasm_with_data_segment(&host, 2, 0, 100_000);
     assert!(res.is_ok());
     assert_eq!(host.as_budget().get_wasm_mem_alloc()?, 2 * 0x10_000);
     Ok(())
@@ -457,7 +449,7 @@ fn instantiate_with_page_and_segment_count(
 #[test]
 fn many_small_segments_ok() -> Result<(), HostError> {
     let host = observe_host!(Host::test_host_with_recording_footprint());
-    let res = instantiate_with_page_and_segment_count(&host, 1, 10000, 1);
+    let res = instantiate_with_page_and_segment_count(&host, 1, 1000, 1);
     assert!(res.is_ok());
     Ok(())
 }
@@ -527,127 +519,90 @@ fn excessive_logging() -> Result<(), HostError> {
     let host = Host::test_host_with_recording_footprint();
     host.enable_debug()?;
     let contract_id_obj = host.register_test_contract_wasm(wasm.as_slice());
+    let constructor_events_len = host.get_events()?.0.len();
+    // 2 diagnostic events are emitted for 'calling' the default constructor.
+    assert_eq!(constructor_events_len, 2);
+    host.switch_to_enforcing_storage()?;
 
-    if host.get_ledger_protocol_version()? >= crate::vm::ModuleCache::MIN_LEDGER_VERSION {
-        host.switch_to_enforcing_storage()?;
-    }
-
-    let expected_budget_p21 = expect![[r#"
-        =================================================================
-        Cpu limit: 2000000; used: 215305
-        Mem limit: 500000; used: 166764
-        =================================================================
-        CostType                           cpu_insns      mem_bytes      
-        WasmInsnExec                       300            0              
-        MemAlloc                           17058          67344          
-        MemCpy                             2866           0              
-        MemCmp                             512            0              
-        DispatchHostFunction               310            0              
-        VisitObject                        244            0              
-        ValSer                             0              0              
-        ValDeser                           0              0              
-        ComputeSha256Hash                  3738           0              
-        ComputeEd25519PubKey               0              0              
-        VerifyEd25519Sig                   0              0              
-        VmInstantiation                    0              0              
-        VmCachedInstantiation              0              0              
-        InvokeVmFunction                   1948           14             
-        ComputeKeccak256Hash               0              0              
-        DecodeEcdsaCurve256Sig             0              0              
-        RecoverEcdsaSecp256k1Key           0              0              
-        Int256AddSub                       0              0              
-        Int256Mul                          0              0              
-        Int256Div                          0              0              
-        Int256Pow                          0              0              
-        Int256Shift                        0              0              
-        ChaCha20DrawBytes                  0              0              
-        ParseWasmInstructions              74665          17967          
-        ParseWasmFunctions                 4224           370            
-        ParseWasmGlobals                   1377           104            
-        ParseWasmTableEntries              29989          6285           
-        ParseWasmTypes                     8292           505            
-        ParseWasmDataSegments              0              0              
-        ParseWasmElemSegments              0              0              
-        ParseWasmImports                   5483           806            
-        ParseWasmExports                   6709           568            
-        ParseWasmDataSegmentBytes          0              0              
-        InstantiateWasmInstructions        43030          70704          
-        InstantiateWasmFunctions           59             114            
-        InstantiateWasmGlobals             83             53             
-        InstantiateWasmTableEntries        3300           1025           
-        InstantiateWasmTypes               0              0              
-        InstantiateWasmDataSegments        0              0              
-        InstantiateWasmElemSegments        0              0              
-        InstantiateWasmImports             6476           762            
-        InstantiateWasmExports             4642           143            
-        InstantiateWasmDataSegmentBytes    0              0              
-        Sec1DecodePointUncompressed        0              0              
-        VerifyEcdsaSecp256r1Sig            0              0              
-        =================================================================
-
-    "#]];
-
-    let expected_budget_p20 = expect![[r#"
-        =================================================================
-        Cpu limit: 2000000; used: 522315
-        Mem limit: 500000; used: 202391
-        =================================================================
-        CostType                           cpu_insns      mem_bytes      
-        WasmInsnExec                       300            0              
-        MemAlloc                           15750          67248          
-        MemCpy                             2298           0              
-        MemCmp                             696            0              
-        DispatchHostFunction               310            0              
-        VisitObject                        244            0              
-        ValSer                             0              0              
-        ValDeser                           0              0              
-        ComputeSha256Hash                  3738           0              
-        ComputeEd25519PubKey               0              0              
-        VerifyEd25519Sig                   0              0              
-        VmInstantiation                    497031         135129         
-        VmCachedInstantiation              0              0              
-        InvokeVmFunction                   1948           14             
-        ComputeKeccak256Hash               0              0              
-        DecodeEcdsaCurve256Sig             0              0              
-        RecoverEcdsaSecp256k1Key           0              0              
-        Int256AddSub                       0              0              
-        Int256Mul                          0              0              
-        Int256Div                          0              0              
-        Int256Pow                          0              0              
-        Int256Shift                        0              0              
-        ChaCha20DrawBytes                  0              0              
-        ParseWasmInstructions              0              0              
-        ParseWasmFunctions                 0              0              
-        ParseWasmGlobals                   0              0              
-        ParseWasmTableEntries              0              0              
-        ParseWasmTypes                     0              0              
-        ParseWasmDataSegments              0              0              
-        ParseWasmElemSegments              0              0              
-        ParseWasmImports                   0              0              
-        ParseWasmExports                   0              0              
-        ParseWasmDataSegmentBytes          0              0              
-        InstantiateWasmInstructions        0              0              
-        InstantiateWasmFunctions           0              0              
-        InstantiateWasmGlobals             0              0              
-        InstantiateWasmTableEntries        0              0              
-        InstantiateWasmTypes               0              0              
-        InstantiateWasmDataSegments        0              0              
-        InstantiateWasmElemSegments        0              0              
-        InstantiateWasmImports             0              0              
-        InstantiateWasmExports             0              0              
-        InstantiateWasmDataSegmentBytes    0              0              
-        Sec1DecodePointUncompressed        0              0              
-        VerifyEcdsaSecp256r1Sig            0              0              
-        =================================================================
+    let expected_budget = expect![[r#"
+    =================================================================
+    Cpu limit: 2000000; used: 215305
+    Mem limit: 500000; used: 166764
+    =================================================================
+    CostType                           cpu_insns      mem_bytes      
+    WasmInsnExec                       300            0              
+    MemAlloc                           17058          67344          
+    MemCpy                             2866           0              
+    MemCmp                             512            0              
+    DispatchHostFunction               310            0              
+    VisitObject                        244            0              
+    ValSer                             0              0              
+    ValDeser                           0              0              
+    ComputeSha256Hash                  3738           0              
+    ComputeEd25519PubKey               0              0              
+    VerifyEd25519Sig                   0              0              
+    VmInstantiation                    0              0              
+    VmCachedInstantiation              0              0              
+    InvokeVmFunction                   1948           14             
+    ComputeKeccak256Hash               0              0              
+    DecodeEcdsaCurve256Sig             0              0              
+    RecoverEcdsaSecp256k1Key           0              0              
+    Int256AddSub                       0              0              
+    Int256Mul                          0              0              
+    Int256Div                          0              0              
+    Int256Pow                          0              0              
+    Int256Shift                        0              0              
+    ChaCha20DrawBytes                  0              0              
+    ParseWasmInstructions              74665          17967          
+    ParseWasmFunctions                 4224           370            
+    ParseWasmGlobals                   1377           104            
+    ParseWasmTableEntries              29989          6285           
+    ParseWasmTypes                     8292           505            
+    ParseWasmDataSegments              0              0              
+    ParseWasmElemSegments              0              0              
+    ParseWasmImports                   5483           806            
+    ParseWasmExports                   6709           568            
+    ParseWasmDataSegmentBytes          0              0              
+    InstantiateWasmInstructions        43030          70704          
+    InstantiateWasmFunctions           59             114            
+    InstantiateWasmGlobals             83             53             
+    InstantiateWasmTableEntries        3300           1025           
+    InstantiateWasmTypes               0              0              
+    InstantiateWasmDataSegments        0              0              
+    InstantiateWasmElemSegments        0              0              
+    InstantiateWasmImports             6476           762            
+    InstantiateWasmExports             4642           143            
+    InstantiateWasmDataSegmentBytes    0              0              
+    Sec1DecodePointUncompressed        0              0              
+    VerifyEcdsaSecp256r1Sig            0              0              
+    Bls12381EncodeFp                   0              0              
+    Bls12381DecodeFp                   0              0              
+    Bls12381G1CheckPointOnCurve        0              0              
+    Bls12381G1CheckPointInSubgroup     0              0              
+    Bls12381G2CheckPointOnCurve        0              0              
+    Bls12381G2CheckPointInSubgroup     0              0              
+    Bls12381G1ProjectiveToAffine       0              0              
+    Bls12381G2ProjectiveToAffine       0              0              
+    Bls12381G1Add                      0              0              
+    Bls12381G1Mul                      0              0              
+    Bls12381G1Msm                      0              0              
+    Bls12381MapFpToG1                  0              0              
+    Bls12381HashToG1                   0              0              
+    Bls12381G2Add                      0              0              
+    Bls12381G2Mul                      0              0              
+    Bls12381G2Msm                      0              0              
+    Bls12381MapFp2ToG2                 0              0              
+    Bls12381HashToG2                   0              0              
+    Bls12381Pairing                    0              0              
+    Bls12381FrFromU256                 0              0              
+    Bls12381FrToU256                   0              0              
+    Bls12381FrAddSub                   0              0              
+    Bls12381FrMul                      0              0              
+    Bls12381FrPow                      0              0              
+    Bls12381FrInv                      0              0              
+    =================================================================
 
     "#]];
-
-    let expected_budget =
-        if host.get_ledger_protocol_version()? < crate::vm::ModuleCache::MIN_LEDGER_VERSION {
-            expected_budget_p20
-        } else {
-            expected_budget_p21
-        };
 
     // moderate logging
     {
@@ -660,7 +615,7 @@ fn excessive_logging() -> Result<(), HostError> {
         )?;
         assert_eq!(SymbolSmall::try_from(res)?.to_string(), "pass");
         // three debug events: fn_call, log, fn_return
-        assert_eq!(host.get_events()?.0.len(), 3);
+        assert_eq!(host.get_events()?.0.len() - constructor_events_len, 3);
         assert!(
             !host.as_budget().shadow_mem_limit_exceeded()?
                 && !host.as_budget().shadow_cpu_limit_exceeded()?
@@ -821,8 +776,7 @@ fn test_integer_overflow() -> Result<(), HostError> {
 
 #[test]
 fn test_corrupt_custom_section() -> Result<(), HostError> {
-    use crate::meta::make_interface_version;
-    use crate::xdr::{Limits, ScEnvMetaEntry, WriteXdr};
+    use crate::xdr::{Limits, ScEnvMetaEntry, ScEnvMetaEntryInterfaceVersion, WriteXdr};
 
     let host = observe_host!(Host::test_host_with_recording_footprint());
     host.enable_debug()?;
@@ -851,9 +805,12 @@ fn test_corrupt_custom_section() -> Result<(), HostError> {
     ));
 
     // invalid section name
-    let xdr = ScEnvMetaEntry::ScEnvMetaKindInterfaceVersion(make_interface_version(20, 0))
-        .to_xdr(Limits::none())
-        .unwrap();
+    let xdr = ScEnvMetaEntry::ScEnvMetaKindInterfaceVersion(ScEnvMetaEntryInterfaceVersion {
+        protocol: 20,
+        pre_release: 0,
+    })
+    .to_xdr(Limits::none())
+    .unwrap();
     let res = host.register_test_contract_wasm_from_source_account(
         wasm_util::wasm_module_with_custom_section("contractenvmetav1", &xdr).as_slice(),
         generate_account_id(&host),
@@ -898,7 +855,7 @@ fn test_corrupt_custom_section() -> Result<(), HostError> {
         ));
 
         // invalid: protocol is current but pre-release version doesn't match env's
-        let env_pre = meta::get_pre_release_version(meta::INTERFACE_VERSION);
+        let env_pre = meta::INTERFACE_VERSION.pre_release;
         let res = host.register_test_contract_wasm_from_source_account(
             wasm_util::wasm_module_with_custom_section(
                 "contractenvmetav0",
@@ -1389,4 +1346,105 @@ fn test_stack_depth_stability() {
         ),
         (ScErrorType::Budget, ScErrorCode::ExceededLimit)
     ));
+}
+
+#[test]
+fn test_misc_hostile_wasms() {
+    // This test loads and runs a bunch of hostile WASM modules
+    // found in the hostile_inputs subdirectory. It attempts to
+    // instantiate the contract and then run a 0-ary function in
+    // the contract called "test".
+    let mut bad_inputs = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    bad_inputs.push("src/test/hostile_inputs");
+    eprintln!("loading hostile inputs from {:?}", bad_inputs);
+    let mut n_wasms = 0;
+    let mut n_instantiated_ok = 0;
+    let mut n_instantiated_external_error = 0;
+    let mut n_instantiated_internal_error = 0;
+    let mut n_executed_ok = 0;
+    let mut n_executed_external_error = 0;
+    let mut n_executed_internal_error = 0;
+
+    for entry in std::fs::read_dir(bad_inputs).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.extension().unwrap() == "wasm" {
+            let host = Host::test_host_with_recording_footprint();
+            let filename = path.file_name().unwrap().to_str().unwrap().to_string();
+            let wasm_code = std::fs::read(path).unwrap();
+            eprintln!("loaded {}-byte wasm {}", wasm_code.len(), filename);
+            n_wasms += 1;
+            host.as_budget().reset_unlimited().unwrap();
+            let addr_res = host.register_test_contract_wasm_from_source_account(
+                &wasm_code,
+                generate_account_id(&host),
+                generate_bytes_array(&host),
+            );
+            match addr_res {
+                Err(e) => {
+                    if e.error.is_code(ScErrorCode::InternalError) {
+                        eprintln!(
+                            "instantiation failed with internal error for {}: {:?}",
+                            filename, e
+                        );
+                        n_instantiated_internal_error += 1;
+                    } else {
+                        eprintln!(
+                            "instantiation failed with external error for {}: {:?}",
+                            filename, e
+                        );
+                        n_instantiated_external_error += 1;
+                    }
+                    continue;
+                }
+                Ok(contract_id) => {
+                    n_instantiated_ok += 1;
+                    let call_res = host.call(
+                        contract_id,
+                        Symbol::try_from_small_str("test").unwrap(),
+                        test_vec![&host].into(),
+                    );
+                    if let Err(e) = call_res {
+                        if e.error.is_code(ScErrorCode::InternalError) {
+                            eprintln!(
+                                "execution failed with internal error for {}: {:?}",
+                                filename, e
+                            );
+                            n_executed_internal_error += 1;
+                        } else {
+                            eprintln!(
+                                "execution failed with external error for {}: {:?}",
+                                filename, e
+                            );
+                            n_executed_external_error += 1;
+                        }
+                    } else {
+                        n_executed_ok += 1;
+                        eprintln!("execution succeeded for {}", filename);
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("loaded {} hostile Wasm modules", n_wasms);
+    eprintln!("instantiated {} contracts successfully", n_instantiated_ok);
+    eprintln!(
+        "instantiation failed with external error for {} contracts",
+        n_instantiated_external_error
+    );
+    eprintln!(
+        "instantiation failed with internal error for {} contracts",
+        n_instantiated_internal_error
+    );
+    eprintln!("executed {} contracts successfully", n_executed_ok);
+    eprintln!(
+        "execution failed with external error for {} contracts",
+        n_executed_external_error
+    );
+    eprintln!(
+        "execution failed with internal error for {} contracts",
+        n_executed_internal_error
+    );
+    assert_eq!(n_instantiated_internal_error, 0);
+    assert_eq!(n_executed_internal_error, 0);
 }

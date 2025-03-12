@@ -131,8 +131,12 @@ impl BudgetDimension {
 
     pub(crate) fn reset(&mut self, limit: u64) {
         self.limit = limit;
-        self.total_count = 0;
         self.shadow_limit = limit;
+        self.reset_count();
+    }
+
+    pub(crate) fn reset_count(&mut self) {
+        self.total_count = 0;
         self.shadow_total_count = 0;
     }
 
@@ -165,7 +169,7 @@ impl BudgetDimension {
         is_shadow: IsShadowMode,
     ) -> Result<u64, HostError> {
         let cm = self.get_cost_model(ty)?;
-        let amount = cm.evaluate(input)?.saturating_mul(iterations);
+        let amount = cm.evaluate(iterations, input)?;
 
         #[cfg(all(not(target_family = "wasm"), feature = "tracy"))]
         if _is_cpu.0 {

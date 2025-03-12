@@ -14,10 +14,10 @@ use crate::{
 };
 use crate::{
     budget::{AsBudget, Budget},
+    crypto::sha256_hash_from_bytes,
     events::Events,
     fees::LedgerEntryRentChange,
     host::{
-        crypto::sha256_hash_from_bytes,
         metered_clone::{MeteredAlloc, MeteredClone, MeteredContainer, MeteredIterator},
         metered_xdr::{metered_from_xdr_with_budget, metered_write_xdr},
         TraceHook,
@@ -200,6 +200,35 @@ pub fn get_ledger_changes(
     Ok(changes)
 }
 
+/// Creates ledger changes for entries that don't exist in the storage.
+///
+/// In recording mode it's possible to have discrepancies between the storage
+/// and the footprint. Specifically, if an entry is only accessed from a
+/// function that has failed and had its failure handled gracefully (via
+/// `try_call`), then the storage map will get rolled back and the access will
+/// only be recorded in the footprint. However, we still need to account for
+/// these in the ledger entry changes, as downstream consumers (simulation) rely
+/// on that to determine the fees.
+#[cfg(any(test, feature = "recording_mode"))]
+fn add_footprint_only_ledger_changes(
+    budget: &Budget,
+    storage: &Storage,
+    changes: &mut Vec<LedgerEntryChange>,
+) -> Result<(), HostError> {
+    for (key, access_type) in storage.footprint.0.iter(budget)? {
+        // We have to check if the entry exists in the internal storage map
+        // because `has` check on storage affects the footprint.
+        if storage.map.contains_key(key, budget)? {
+            continue;
+        }
+        let mut entry_change = LedgerEntryChange::default();
+        metered_write_xdr(budget, key.as_ref(), &mut entry_change.encoded_key)?;
+        entry_change.read_only = matches!(*access_type, AccessType::ReadOnly);
+        changes.push(entry_change);
+    }
+    Ok(())
+}
+
 /// Extracts the rent-related changes from the provided ledger changes.
 ///
 /// Only meaningful changes are returned (i.e. no-op changes are skipped).
@@ -211,12 +240,18 @@ pub fn extract_rent_changes(ledger_changes: &[LedgerEntryChange]) -> Vec<LedgerE
         .filter_map(|entry_change| {
             // Rent changes are only relevant to non-removed entries with
             // a ttl.
-            if let (Some(ttl_change), Some(encoded_new_value)) =
+            if let (Some(ttl_change), optional_encoded_new_value) =
                 (&entry_change.ttl_change, &entry_change.encoded_new_value)
             {
+                let new_size_bytes = if let Some(encoded_new_value) = optional_encoded_new_value {
+                    encoded_new_value.len() as u32
+                } else {
+                    entry_change.old_entry_size_bytes
+                };
+
                 // Skip the entry if 1. it is not extended and 2. the entry size has not increased
                 if ttl_change.old_live_until_ledger >= ttl_change.new_live_until_ledger
-                    && entry_change.old_entry_size_bytes >= encoded_new_value.len() as u32
+                    && entry_change.old_entry_size_bytes >= new_size_bytes
                 {
                     return None;
                 }
@@ -226,7 +261,7 @@ pub fn extract_rent_changes(ledger_changes: &[LedgerEntryChange]) -> Vec<LedgerE
                         ContractDataDurability::Persistent
                     ),
                     old_size_bytes: entry_change.old_entry_size_bytes,
-                    new_size_bytes: encoded_new_value.len() as u32,
+                    new_size_bytes,
                     old_live_until_ledger: ttl_change.old_live_until_ledger,
                     new_live_until_ledger: ttl_change.new_live_until_ledger,
                 })
@@ -512,6 +547,7 @@ pub fn invoke_host_function_in_recording_mode(
     host.set_source_account(source_account)?;
     host.set_ledger_info(ledger_info)?;
     host.set_base_prng_seed(base_prng_seed)?;
+
     if let Some(auth_entries) = &auth_entries {
         host.set_authorization_entries(auth_entries.clone())?;
     } else {
@@ -521,6 +557,7 @@ pub fn invoke_host_function_in_recording_mode(
     if enable_diagnostics {
         host.set_diagnostic_level(DiagnosticLevel::Debug)?;
     }
+
     let invoke_result = host.invoke_function(host_function);
     let mut contract_events_and_return_value_size = 0_u32;
     if let Ok(res) = &invoke_result {
@@ -602,8 +639,15 @@ pub fn invoke_host_function_in_recording_mode(
     }
 
     let (ledger_changes, contract_events) = if invoke_result.is_ok() {
-        let ledger_changes =
+        let mut ledger_changes =
             get_ledger_changes(&budget, &storage, &*ledger_snapshot, init_ttl_map)?;
+        // Add the keys that only exist in the footprint, but not in the
+        // storage. This doesn't resemble anything in the enforcing mode, so use
+        // the shadow budget for this.
+        budget.with_shadow_mode(|| {
+            add_footprint_only_ledger_changes(budget, &storage, &mut ledger_changes)
+        });
+
         let encoded_contract_events = encode_contract_events(budget, &events)?;
         for e in &encoded_contract_events {
             contract_events_and_return_value_size =
@@ -814,7 +858,7 @@ struct StorageMapSnapshotSource<'a> {
     map: &'a StorageMap,
 }
 
-impl<'a> SnapshotSource for StorageMapSnapshotSource<'a> {
+impl SnapshotSource for StorageMapSnapshotSource<'_> {
     fn get(&self, key: &Rc<LedgerKey>) -> Result<Option<EntryWithLiveUntil>, HostError> {
         if let Some(Some((entry, live_until_ledger))) =
             self.map.get::<Rc<LedgerKey>>(key, self.budget)?

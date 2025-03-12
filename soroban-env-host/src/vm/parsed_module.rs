@@ -1,14 +1,17 @@
 use crate::{
     err,
     host::metered_clone::MeteredContainer,
-    meta::{self, get_ledger_protocol_version},
-    xdr::{ContractCostType, Limited, ReadXdr, ScEnvMetaEntry, ScErrorCode, ScErrorType},
+    meta,
+    xdr::{
+        ContractCostType, Limited, ReadXdr, ScEnvMetaEntry, ScEnvMetaEntryInterfaceVersion,
+        ScErrorCode, ScErrorType,
+    },
     Host, HostError, DEFAULT_XDR_RW_LIMITS,
 };
 
 use wasmi::{Engine, Module};
 
-use super::{ModuleCache, MAX_VM_ARGS};
+use super::Vm;
 use std::{collections::BTreeSet, io::Cursor, rc::Rc};
 
 #[derive(Debug, Clone)]
@@ -85,12 +88,10 @@ impl VersionedContractCodeCostInputs {
                 // VmInstantiation cost type was repurposed to only cover the
                 // cost of parsing, so we have to charge the "second half" cost
                 // of instantiation separately here.
-                if _host.get_ledger_protocol_version()? >= ModuleCache::MIN_LEDGER_VERSION {
-                    _host.charge_budget(
-                        ContractCostType::VmCachedInstantiation,
-                        Some(*wasm_bytes as u64),
-                    )?;
-                }
+                _host.charge_budget(
+                    ContractCostType::VmCachedInstantiation,
+                    Some(*wasm_bytes as u64),
+                )?;
             }
             Self::V1(inputs) => {
                 _host.charge_budget(ContractCostType::InstantiateWasmInstructions, None)?;
@@ -188,9 +189,7 @@ impl ParsedModule {
         // parsing phase, so there is no DOS factor. We don't charge for
         // insertion/lookups, since they should be cheap and number of
         // operations on the set is limited.
-        if host.get_ledger_protocol_version()? >= ModuleCache::MIN_LEDGER_VERSION {
-            Vec::<(&str, &str)>::charge_bulk_init_cpy(symbols.len() as u64, host)?;
-        }
+        Vec::<(&str, &str)>::charge_bulk_init_cpy(symbols.len() as u64, host)?;
         callback(&symbols)
     }
 
@@ -220,18 +219,18 @@ impl ParsedModule {
 
         Self::check_max_args(host, &module)?;
         let interface_version = Self::check_meta_section(host, &module)?;
-        let contract_proto = get_ledger_protocol_version(interface_version);
+        let contract_proto = interface_version.protocol;
 
         Ok((module, contract_proto))
     }
 
     fn check_contract_interface_version(
         host: &Host,
-        interface_version: u64,
+        interface_version: &ScEnvMetaEntryInterfaceVersion,
     ) -> Result<(), HostError> {
         let want_proto = {
             let ledger_proto = host.get_ledger_protocol_version()?;
-            let env_proto = get_ledger_protocol_version(meta::INTERFACE_VERSION);
+            let env_proto = meta::INTERFACE_VERSION.protocol;
             if ledger_proto <= env_proto {
                 // ledger proto should be before or equal to env proto
                 ledger_proto
@@ -248,9 +247,9 @@ impl ParsedModule {
 
         // Not used when "next" is enabled
         #[cfg(not(feature = "next"))]
-        let got_pre = meta::get_pre_release_version(interface_version);
+        let got_pre = interface_version.pre_release;
 
-        let got_proto = get_ledger_protocol_version(interface_version);
+        let got_proto = interface_version.protocol;
 
         if got_proto < want_proto {
             // Old protocols are finalized, we only support contracts
@@ -278,7 +277,7 @@ impl ParsedModule {
             {
                 // Current protocol might have a nonzero prerelease number; we will
                 // allow it only if it matches the current prerelease exactly.
-                let want_pre = meta::get_pre_release_version(meta::INTERFACE_VERSION);
+                let want_pre = meta::INTERFACE_VERSION.pre_release;
                 if want_pre != got_pre {
                     return Err(err!(
                         host,
@@ -322,7 +321,10 @@ impl ParsedModule {
         Self::module_custom_section(&self.module, name)
     }
 
-    fn check_meta_section(host: &Host, m: &Module) -> Result<u64, HostError> {
+    fn check_meta_section(
+        host: &Host,
+        m: &Module,
+    ) -> Result<ScEnvMetaEntryInterfaceVersion, HostError> {
         if let Some(env_meta) = Self::module_custom_section(m, meta::ENV_META_V0_SECTION_NAME) {
             let mut limits = DEFAULT_XDR_RW_LIMITS;
             limits.len = env_meta.len();
@@ -330,7 +332,7 @@ impl ParsedModule {
             if let Some(env_meta_entry) = ScEnvMetaEntry::read_xdr_iter(&mut cursor).next() {
                 let ScEnvMetaEntry::ScEnvMetaKindInterfaceVersion(v) =
                     host.map_err(env_meta_entry)?;
-                Self::check_contract_interface_version(host, v)?;
+                Self::check_contract_interface_version(host, &v)?;
                 Ok(v)
             } else {
                 Err(host.err(
@@ -354,7 +356,7 @@ impl ParsedModule {
         for e in m.exports() {
             match e.ty() {
                 wasmi::ExternType::Func(f) => {
-                    if f.results().len() > MAX_VM_ARGS {
+                    if f.results().len() > Vm::MAX_VM_ARGS {
                         return Err(err!(
                             host,
                             (ScErrorType::WasmVm, ScErrorCode::InvalidInput),
@@ -362,7 +364,7 @@ impl ParsedModule {
                             f.results().len()
                         ));
                     }
-                    if f.params().len() > MAX_VM_ARGS {
+                    if f.params().len() > Vm::MAX_VM_ARGS {
                         return Err(err!(
                             host,
                             (ScErrorType::WasmVm, ScErrorCode::InvalidInput),

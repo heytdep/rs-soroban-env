@@ -3,9 +3,7 @@ use crate::simulation::{
     ExtendTtlOpSimulationResult, LedgerEntryDiff, RestoreOpSimulationResult,
     SimulationAdjustmentConfig, SimulationAdjustmentFactor,
 };
-use crate::testutils::{
-    ledger_entry_to_ledger_key, temp_entry, MockSnapshotSource, CURRENT_PROTOCOL_VERSION,
-};
+use crate::testutils::{ledger_entry_to_ledger_key, temp_entry, MockSnapshotSource};
 use crate::NetworkConfig;
 use pretty_assertions::assert_eq;
 use soroban_env_host::e2e_testutils::{
@@ -16,13 +14,17 @@ use soroban_env_host::e2e_testutils::{
 };
 use soroban_env_host::fees::{FeeConfiguration, RentFeeConfiguration};
 use soroban_env_host::xdr::{
-    ContractCostParamEntry, ContractCostParams, ContractCostType, ContractDataDurability,
-    ContractDataEntry, ExtensionPoint, LedgerEntry, LedgerEntryData, LedgerFootprint, LedgerKey,
-    LedgerKeyContractData, ScAddress, ScNonceKey, ScVal, SorobanAddressCredentials,
-    SorobanAuthorizationEntry, SorobanCredentials, SorobanResources, SorobanTransactionData,
+    AccountId, AlphaNum4, AssetCode4, ContractCostParamEntry, ContractCostParams, ContractCostType,
+    ContractDataDurability, ContractDataEntry, ContractExecutable, ExtensionPoint, Hash,
+    HostFunction, Int128Parts, InvokeContractArgs, LedgerEntry, LedgerEntryData, LedgerFootprint,
+    LedgerKey, LedgerKeyContractData, LedgerKeyTrustLine, PublicKey, ScAddress, ScBytes,
+    ScContractInstance, ScErrorCode, ScErrorType, ScMap, ScNonceKey, ScString, ScSymbol, ScVal,
+    SorobanAddressCredentials, SorobanAuthorizationEntry, SorobanAuthorizedFunction,
+    SorobanAuthorizedInvocation, SorobanCredentials, SorobanResources, SorobanTransactionData,
+    TrustLineAsset, TrustLineEntry, TrustLineEntryExt, TrustLineFlags, Uint256, VecM,
 };
-
-use soroban_test_wasms::{ADD_I32, AUTH_TEST_CONTRACT};
+use soroban_env_host::HostError;
+use soroban_test_wasms::{ADD_I32, AUTH_TEST_CONTRACT, TRY_CALL_SAC};
 use std::rc::Rc;
 use tap::prelude::*;
 
@@ -127,12 +129,8 @@ fn test_simulate_upload_wasm() {
     assert!(res.contract_events.is_empty());
     assert!(res.diagnostic_events.is_empty());
 
-    let (expected_instructions, expected_write_bytes, expected_resource_fee, expected_mem_bytes) =
-        if ledger_info.protocol_version == CURRENT_PROTOCOL_VERSION {
-            (1505493, 636, 33063, 752745)
-        } else {
-            (1644789, 684, 35548, 822393)
-        };
+    let expected_instructions = 1644789;
+    let expected_write_bytes = 684;
     assert_eq!(
         res.transaction_data,
         Some(SorobanTransactionData {
@@ -146,11 +144,11 @@ fn test_simulate_upload_wasm() {
                 read_bytes: 0,
                 write_bytes: expected_write_bytes,
             },
-            resource_fee: expected_resource_fee,
+            resource_fee: 35548,
         })
     );
     assert_eq!(res.simulated_instructions, expected_instructions);
-    assert_eq!(res.simulated_memory, expected_mem_bytes);
+    assert_eq!(res.simulated_memory, 822393);
     assert_eq!(
         res.modified_entries,
         vec![LedgerEntryDiff {
@@ -187,12 +185,6 @@ fn test_simulate_upload_wasm() {
         res.simulated_instructions
     );
     assert_eq!(res_with_adjustments.simulated_memory, res.simulated_memory);
-    let expected_adjusted_resource_fee = if ledger_info.protocol_version == CURRENT_PROTOCOL_VERSION
-    {
-        133367
-    } else {
-        135867
-    };
     assert_eq!(
         res_with_adjustments.transaction_data,
         Some(SorobanTransactionData {
@@ -206,7 +198,7 @@ fn test_simulate_upload_wasm() {
                 read_bytes: 0,
                 write_bytes: expected_write_bytes + 300,
             },
-            resource_fee: expected_adjusted_resource_fee,
+            resource_fee: 135867,
         })
     );
 }
@@ -325,12 +317,7 @@ fn test_simulate_create_contract() {
     );
     assert!(res.contract_events.is_empty());
     assert!(res.diagnostic_events.is_empty());
-    let (expected_instructions, expected_read_bytes, expected_resource_fee, expected_mem_bytes) =
-        if ledger_info.protocol_version == CURRENT_PROTOCOL_VERSION {
-            (929703, 636, 6490, 464846)
-        } else {
-            (1014327, 684, 6577, 507158)
-        };
+    let expected_instructions = 2979643;
     assert_eq!(
         res.transaction_data,
         Some(SorobanTransactionData {
@@ -341,14 +328,14 @@ fn test_simulate_create_contract() {
                     read_write: vec![contract.contract_key.clone()].try_into().unwrap()
                 },
                 instructions: expected_instructions,
-                read_bytes: expected_read_bytes,
+                read_bytes: 684,
                 write_bytes: 104,
             },
-            resource_fee: expected_resource_fee,
+            resource_fee: 8542,
         })
     );
     assert_eq!(res.simulated_instructions, expected_instructions);
-    assert_eq!(res.simulated_memory, expected_mem_bytes);
+    assert_eq!(res.simulated_memory, 1489810);
     assert_eq!(
         res.modified_entries,
         vec![LedgerEntryDiff {
@@ -476,13 +463,7 @@ fn test_simulate_invoke_contract_with_auth() {
     assert!(res.contract_events.is_empty());
     assert!(!res.diagnostic_events.is_empty());
 
-    let (expected_instructions, expected_read_bytes, expected_resource_fee, expected_mem_bytes) =
-        if ledger_info.protocol_version == CURRENT_PROTOCOL_VERSION {
-            (38210172, 7492, 76472, 19104958)
-        } else {
-            (41268119, 7540, 79532, 20633919)
-        };
-
+    let expected_instructions = 41269703;
     assert_eq!(
         res.transaction_data,
         Some(SorobanTransactionData {
@@ -508,14 +489,14 @@ fn test_simulate_invoke_contract_with_auth() {
                     .unwrap()
                 },
                 instructions: expected_instructions,
-                read_bytes: expected_read_bytes,
+                read_bytes: 7540,
                 write_bytes: 76,
             },
-            resource_fee: expected_resource_fee,
+            resource_fee: 79533,
         })
     );
     assert_eq!(res.simulated_instructions, expected_instructions);
-    assert_eq!(res.simulated_memory, expected_mem_bytes);
+    assert_eq!(res.simulated_memory, 20634711);
     assert_eq!(
         res.modified_entries,
         vec![LedgerEntryDiff {
@@ -598,12 +579,7 @@ fn test_simulate_extend_ttl_op() {
         100_001,
     )
     .unwrap();
-    let (expected_read_bytes, expected_resource_fee) =
-        if ledger_info.protocol_version == CURRENT_PROTOCOL_VERSION {
-            (7712, 339313)
-        } else {
-            (7808, 341657)
-        };
+
     assert_eq!(
         extension_for_some_entries,
         ExtendTtlOpSimulationResult {
@@ -623,10 +599,10 @@ fn test_simulate_extend_ttl_op() {
                         read_write: Default::default()
                     },
                     instructions: 0,
-                    read_bytes: expected_read_bytes,
+                    read_bytes: 7808,
                     write_bytes: 0,
                 },
-                resource_fee: expected_resource_fee,
+                resource_fee: 341657,
             }
         }
     );
@@ -640,12 +616,7 @@ fn test_simulate_extend_ttl_op() {
         1_000_001,
     )
     .unwrap();
-    let (expected_read_bytes, expected_resource_fee) =
-        if ledger_info.protocol_version == CURRENT_PROTOCOL_VERSION {
-            (7944, 3697000)
-        } else {
-            (8040, 3741533)
-        };
+    let expected_read_bytes = 8040;
     assert_eq!(
         extension_for_all_entries,
         ExtendTtlOpSimulationResult {
@@ -660,7 +631,7 @@ fn test_simulate_extend_ttl_op() {
                     read_bytes: expected_read_bytes,
                     write_bytes: 0,
                 },
-                resource_fee: expected_resource_fee,
+                resource_fee: 3741533,
             }
         }
     );
@@ -690,11 +661,7 @@ fn test_simulate_extend_ttl_op() {
         1_000_001,
     )
     .unwrap();
-    let expected_resource_fee = if ledger_info.protocol_version == CURRENT_PROTOCOL_VERSION {
-        5545310
-    } else {
-        5612108
-    };
+
     assert_eq!(
         extension_for_all_entries_with_adjustment,
         ExtendTtlOpSimulationResult {
@@ -709,7 +676,7 @@ fn test_simulate_extend_ttl_op() {
                     read_bytes: (expected_read_bytes as f64 * 1.2) as u32,
                     write_bytes: 0,
                 },
-                resource_fee: expected_resource_fee,
+                resource_fee: 5612108,
             }
         }
     );
@@ -780,12 +747,7 @@ fn test_simulate_restore_op() {
         &keys,
     )
     .unwrap();
-    let (expected_rw_bytes, expected_resource_fee) =
-        if ledger_info.protocol_version == CURRENT_PROTOCOL_VERSION {
-            (7568, 370692)
-        } else {
-            (7664, 375389)
-        };
+    let expected_rw_bytes = 7664;
     assert_eq!(
         restoration_for_some_entries,
         RestoreOpSimulationResult {
@@ -803,7 +765,7 @@ fn test_simulate_restore_op() {
                     read_bytes: expected_rw_bytes,
                     write_bytes: expected_rw_bytes,
                 },
-                resource_fee: expected_resource_fee,
+                resource_fee: 375389,
             }
         }
     );
@@ -817,12 +779,7 @@ fn test_simulate_restore_op() {
         &keys,
     )
     .unwrap();
-    let (expected_rw_bytes, expected_resource_fee) =
-        if ledger_info.protocol_version == CURRENT_PROTOCOL_VERSION {
-            (7728, 378736)
-        } else {
-            (7824, 383433)
-        };
+    let expected_rw_bytes = 7824;
     assert_eq!(
         extension_for_all_entries,
         RestoreOpSimulationResult {
@@ -837,7 +794,7 @@ fn test_simulate_restore_op() {
                     read_bytes: expected_rw_bytes,
                     write_bytes: expected_rw_bytes,
                 },
-                resource_fee: expected_resource_fee,
+                resource_fee: 383433,
             }
         }
     );
@@ -850,12 +807,7 @@ fn test_simulate_restore_op() {
         &keys,
     )
     .unwrap();
-    let expected_adjusted_resource_fee = if ledger_info.protocol_version == CURRENT_PROTOCOL_VERSION
-    {
-        567785
-    } else {
-        574827
-    };
+
     assert_eq!(
         extension_for_all_entries_with_adjustment,
         RestoreOpSimulationResult {
@@ -870,7 +822,7 @@ fn test_simulate_restore_op() {
                     read_bytes: (expected_rw_bytes as f64 * 1.2) as u32,
                     write_bytes: (expected_rw_bytes as f64 * 1.3) as u32,
                 },
-                resource_fee: expected_adjusted_resource_fee,
+                resource_fee: 574827,
             }
         }
     );
@@ -913,4 +865,287 @@ fn test_simulate_restore_op_returns_error_for_non_existent_entry() {
         &[get_wasm_key(b"123")],
     );
     assert!(res.is_err());
+}
+
+fn sc_symbol(s: &str) -> ScVal {
+    ScVal::Symbol(s.try_into().unwrap())
+}
+
+fn sc_symbol_vec(s: &str) -> ScVal {
+    ScVal::Vec(Some(vec![sc_symbol(s)].try_into().unwrap()))
+}
+
+fn create_sac_ledger_entry(sac_address: &ScAddress, admin_address: &ScAddress) -> LedgerEntry {
+    let contract_instance_entry = ContractDataEntry {
+        ext: ExtensionPoint::V0,
+        contract: sac_address.clone(),
+        key: ScVal::LedgerKeyContractInstance,
+        durability: ContractDataDurability::Persistent,
+        val: ScVal::ContractInstance(ScContractInstance {
+            executable: ContractExecutable::StellarAsset,
+            storage: Some(
+                ScMap::sorted_from_pairs(
+                    [
+                        (
+                            sc_symbol_vec("Admin"),
+                            ScVal::Address(admin_address.clone()),
+                        ),
+                        (
+                            sc_symbol("METADATA"),
+                            ScVal::Map(Some(
+                                ScMap::sorted_from_pairs(
+                                    [
+                                        (
+                                            sc_symbol("name"),
+                                            ScVal::String(ScString("aaaa".try_into().unwrap())),
+                                        ),
+                                        (sc_symbol("decimal"), ScVal::U32(7)),
+                                        (
+                                            sc_symbol("symbol"),
+                                            ScVal::String(ScString("aaaa".try_into().unwrap())),
+                                        ),
+                                    ]
+                                    .into_iter(),
+                                )
+                                .unwrap(),
+                            )),
+                        ),
+                        (
+                            sc_symbol_vec("AssetInfo"),
+                            ScVal::Vec(Some(
+                                vec![
+                                    sc_symbol("AlphaNum4"),
+                                    ScVal::Map(Some(
+                                        ScMap::sorted_from_pairs(
+                                            [
+                                                (
+                                                    sc_symbol("asset_code"),
+                                                    ScVal::String(ScString(
+                                                        "aaaa".try_into().unwrap(),
+                                                    )),
+                                                ),
+                                                (
+                                                    sc_symbol("issuer"),
+                                                    ScVal::Bytes(ScBytes(
+                                                        vec![0; 32].try_into().unwrap(),
+                                                    )),
+                                                ),
+                                            ]
+                                            .into_iter(),
+                                        )
+                                        .unwrap(),
+                                    )),
+                                ]
+                                .try_into()
+                                .unwrap(),
+                            )),
+                        ),
+                    ]
+                    .into_iter(),
+                )
+                .unwrap(),
+            ),
+        }),
+    };
+    ledger_entry(LedgerEntryData::ContractData(contract_instance_entry))
+}
+
+#[test]
+fn test_simulate_successful_sac_call() {
+    let source_account = get_account_id([123; 32]);
+    let other_account = get_account_id([124; 32]);
+    let sac_address = ScAddress::Contract(Hash([111; 32]));
+    let call_args: VecM<_> = vec![
+        ScVal::Address(ScAddress::Account(other_account.clone())),
+        ScVal::I128(Int128Parts { hi: 0, lo: 1 }),
+    ]
+    .try_into()
+    .unwrap();
+    let host_fn = HostFunction::InvokeContract(InvokeContractArgs {
+        contract_address: sac_address.clone(),
+        function_name: "mint".try_into().unwrap(),
+        args: call_args.clone(),
+    });
+    let contract_instance_le =
+        create_sac_ledger_entry(&sac_address, &ScAddress::Account(source_account.clone()));
+    let trustline = TrustLineEntry {
+        account_id: other_account.clone(),
+        asset: TrustLineAsset::CreditAlphanum4(AlphaNum4 {
+            asset_code: AssetCode4([b'a'; 4]),
+            issuer: AccountId(PublicKey::PublicKeyTypeEd25519(Uint256([0; 32]))),
+        }),
+        balance: 0,
+        limit: 1_000_000_000,
+        flags: TrustLineFlags::AuthorizedFlag as u32,
+        ext: TrustLineEntryExt::V0,
+    };
+    let trustline_le = ledger_entry(LedgerEntryData::Trustline(trustline));
+    let ledger_info = default_ledger_info();
+    let network_config = default_network_config();
+    let snapshot_source = Rc::new(
+        MockSnapshotSource::from_entries(
+            vec![
+                (
+                    contract_instance_le.clone(),
+                    Some(ledger_info.sequence_number + 100),
+                ),
+                (trustline_le.clone(), None),
+                (account_entry(&source_account), None),
+                (account_entry(&other_account), None),
+            ],
+            ledger_info.sequence_number,
+        )
+        .unwrap(),
+    );
+    let res = simulate_invoke_host_function_op(
+        snapshot_source,
+        &network_config,
+        &SimulationAdjustmentConfig::no_adjustments(),
+        &ledger_info,
+        host_fn,
+        None,
+        &source_account,
+        [1; 32],
+        true,
+    )
+    .unwrap();
+    assert_eq!(res.invoke_result.unwrap(), ScVal::Void);
+    assert_eq!(res.contract_events.len(), 1);
+    assert_eq!(
+        res.auth,
+        vec![SorobanAuthorizationEntry {
+            credentials: SorobanCredentials::SourceAccount,
+            root_invocation: SorobanAuthorizedInvocation {
+                function: SorobanAuthorizedFunction::ContractFn(InvokeContractArgs {
+                    contract_address: sac_address,
+                    function_name: ScSymbol("mint".try_into().unwrap()),
+                    args: call_args,
+                },),
+                sub_invocations: Default::default(),
+            },
+        },]
+    );
+    assert_eq!(
+        res.transaction_data,
+        Some(SorobanTransactionData {
+            ext: ExtensionPoint::V0,
+            resources: SorobanResources {
+                footprint: LedgerFootprint {
+                    read_only: vec![ledger_entry_to_ledger_key(&contract_instance_le).unwrap(),]
+                        .try_into()
+                        .unwrap(),
+                    read_write: vec![ledger_entry_to_ledger_key(&trustline_le).unwrap()]
+                        .try_into()
+                        .unwrap()
+                },
+                instructions: 3302139,
+                read_bytes: 532,
+                write_bytes: 116,
+            },
+            resource_fee: 28345,
+        })
+    );
+}
+
+// This test covers an edge-case scenario of a SAC failure due to missing
+// trustline handled with `try_call`, which had an issue in recording mode that
+// led to incorrect footprint.
+// While this doesn't have to be a SAC failure, the issue has been discovered
+// in SAC specifically and seems more likely to occur compared to the regular
+// contracts (as the regular contracts can normally create their entries, unlike
+// the SAC/trustline case).
+#[test]
+fn test_simulate_unsuccessful_sac_call_with_try_call() {
+    let source_account = get_account_id([123; 32]);
+    let other_account = get_account_id([124; 32]);
+    let sac_address = ScAddress::Contract(Hash([111; 32]));
+    let contract = CreateContractData::new([1; 32], TRY_CALL_SAC);
+    let host_fn = HostFunction::InvokeContract(InvokeContractArgs {
+        contract_address: contract.contract_address.clone(),
+        function_name: "mint".try_into().unwrap(),
+        args: vec![
+            ScVal::Address(sac_address.clone()),
+            ScVal::Address(ScAddress::Account(other_account.clone())),
+        ]
+        .try_into()
+        .unwrap(),
+    });
+    let sac_instance_le = create_sac_ledger_entry(&sac_address, &contract.contract_address);
+    let ledger_info = default_ledger_info();
+    let network_config = default_network_config();
+
+    let snapshot_source = Rc::new(
+        MockSnapshotSource::from_entries(
+            vec![
+                (
+                    sac_instance_le.clone(),
+                    Some(ledger_info.sequence_number + 100),
+                ),
+                (
+                    contract.wasm_entry.clone(),
+                    Some(ledger_info.sequence_number + 100),
+                ),
+                (
+                    contract.contract_entry.clone(),
+                    Some(ledger_info.sequence_number + 100),
+                ),
+                (account_entry(&source_account), None),
+                (account_entry(&other_account), None),
+            ],
+            ledger_info.sequence_number,
+        )
+        .unwrap(),
+    );
+
+    let res = simulate_invoke_host_function_op(
+        snapshot_source,
+        &network_config,
+        &SimulationAdjustmentConfig::no_adjustments(),
+        &ledger_info,
+        host_fn,
+        None,
+        &source_account,
+        [1; 32],
+        true,
+    )
+    .unwrap();
+    // The return value indicates the whether the internal `mint` call has
+    // succeeded.
+    assert_eq!(res.invoke_result.unwrap(), ScVal::Bool(false));
+    assert!(res.contract_events.is_empty());
+    assert_eq!(res.auth, vec![]);
+    let trustline_key = LedgerKey::Trustline(LedgerKeyTrustLine {
+        account_id: other_account.clone(),
+        asset: TrustLineAsset::CreditAlphanum4(AlphaNum4 {
+            asset_code: AssetCode4([b'a'; 4]),
+            issuer: AccountId(PublicKey::PublicKeyTypeEd25519(Uint256([0; 32]))),
+        }),
+    });
+    assert_eq!(
+        res.transaction_data,
+        Some(SorobanTransactionData {
+            ext: ExtensionPoint::V0,
+            resources: SorobanResources {
+                footprint: LedgerFootprint {
+                    read_only: vec![
+                        // Trustline key must appear in the footprint, even
+                        // though it's not present in the storage.
+                        trustline_key,
+                        contract.wasm_key.clone(),
+                        contract.contract_key.clone(),
+                        ledger_entry_to_ledger_key(&sac_instance_le).unwrap(),
+                    ]
+                    .tap_mut(|v| v.sort())
+                    .try_into()
+                    .unwrap(),
+                    // No entries should be actually modified.
+                    read_write: Default::default(),
+                },
+                instructions: 5768570,
+                read_bytes: 1196,
+                write_bytes: 0,
+            },
+            resource_fee: 6224,
+        })
+    );
 }

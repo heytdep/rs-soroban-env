@@ -1,16 +1,15 @@
-use crate::vm::ModuleCache;
 use crate::vm::ParsedModule;
 use crate::xdr::{
-    AccountEntry, AccountEntryExt, AccountId, ContractCodeEntry, ContractDataDurability,
-    ContractDataEntry, ContractExecutable, ContractIdPreimage, ContractIdPreimageFromAddress,
-    CreateContractArgs, ExtensionPoint, HashIdPreimage, HashIdPreimageContractId, HostFunction,
-    InvokeContractArgs, LedgerEntry, LedgerEntryData, LedgerEntryExt, LedgerKey,
-    LedgerKeyContractCode, LedgerKeyContractData, Limits, PublicKey, ScAddress, ScBytes,
-    ScContractInstance, ScMapEntry, ScSymbol, ScVal, SequenceNumber, SorobanAuthorizationEntry,
+    AccountEntry, AccountEntryExt, AccountId, ContractCodeEntry, ContractCodeEntryExt,
+    ContractCodeEntryV1, ContractDataDurability, ContractDataEntry, ContractExecutable,
+    ContractIdPreimage, ContractIdPreimageFromAddress, CreateContractArgs, CreateContractArgsV2,
+    ExtensionPoint, HashIdPreimage, HashIdPreimageContractId, HostFunction, InvokeContractArgs,
+    LedgerEntry, LedgerEntryData, LedgerEntryExt, LedgerKey, LedgerKeyContractCode,
+    LedgerKeyContractData, Limits, PublicKey, ScAddress, ScBytes, ScContractInstance, ScMapEntry,
+    ScSymbol, ScVal, SequenceNumber, SorobanAddressCredentials, SorobanAuthorizationEntry,
     SorobanAuthorizedFunction, SorobanAuthorizedInvocation, SorobanCredentials, Thresholds,
     Uint256, WriteXdr,
 };
-use crate::xdr::{ContractCodeEntryExt, ContractCodeEntryV1};
 use crate::{Host, LedgerInfo};
 use sha2::{Digest, Sha256};
 
@@ -65,10 +64,7 @@ pub fn wasm_entry_non_validated(wasm: &[u8]) -> LedgerEntry {
 /// The entry has the most 'up-to-date' contents possible (such as refined costs
 /// in protocol 21).
 pub fn wasm_entry(wasm: &[u8]) -> LedgerEntry {
-    wasm_entry_with_refined_contract_cost_inputs(
-        wasm,
-        e2e_test_protocol_version() >= ModuleCache::MIN_LEDGER_VERSION,
-    )
+    wasm_entry_with_refined_contract_cost_inputs(wasm, true)
 }
 
 pub(crate) fn wasm_entry_with_refined_contract_cost_inputs(
@@ -123,19 +119,35 @@ pub struct CreateContractData {
 
 impl CreateContractData {
     pub fn new(salt: [u8; 32], wasm: &[u8]) -> Self {
-        Self::new_with_refined_contract_cost_inputs(
-            salt,
-            wasm,
-            e2e_test_protocol_version() >= ModuleCache::MIN_LEDGER_VERSION,
-        )
+        Self::new_with_refined_contract_cost_inputs(salt, wasm, true)
     }
+
     pub fn new_with_refined_contract_cost_inputs(
         salt: [u8; 32],
         wasm: &[u8],
         refined_cost_inputs: bool,
     ) -> Self {
-        let deployer = get_account_id([123; 32]);
-        let contract_id_preimage = get_contract_id_preimage(&deployer, &salt);
+        Self::new_with_refined_contract_cost_inputs_and_deployer(
+            None,
+            salt,
+            wasm,
+            refined_cost_inputs,
+        )
+    }
+
+    pub fn new_with_refined_contract_cost_inputs_and_deployer(
+        deployer_with_nonce: Option<(ScAddress, i64)>,
+        salt: [u8; 32],
+        wasm: &[u8],
+        refined_cost_inputs: bool,
+    ) -> Self {
+        let source = get_account_id([123; 32]);
+        let deployer = if let Some((deployer, _)) = &deployer_with_nonce {
+            deployer.clone()
+        } else {
+            ScAddress::Account(source.clone())
+        };
+        let contract_id_preimage = get_contract_id_preimage_from_address(&deployer, &salt);
 
         let host_fn = HostFunction::CreateContract(CreateContractArgs {
             contract_id_preimage: contract_id_preimage.clone(),
@@ -151,7 +163,8 @@ impl CreateContractData {
             key: ScVal::LedgerKeyContractInstance,
             durability: ContractDataDurability::Persistent,
         });
-        let auth_entry = create_contract_auth(&contract_id_preimage, wasm);
+        let auth_entry =
+            create_contract_auth_for_address(deployer_with_nonce, &contract_id_preimage, wasm);
 
         let contract_entry = ledger_entry(LedgerEntryData::ContractData(ContractDataEntry {
             ext: ExtensionPoint::V0,
@@ -167,7 +180,7 @@ impl CreateContractData {
         let wasm_entry = wasm_entry_with_refined_contract_cost_inputs(wasm, refined_cost_inputs);
 
         Self {
-            deployer,
+            deployer: source,
             wasm_key: get_wasm_key(wasm),
             wasm_entry,
             contract_key,
@@ -192,11 +205,18 @@ pub fn get_account_id(pub_key: [u8; 32]) -> AccountId {
     AccountId(PublicKey::PublicKeyTypeEd25519(pub_key.try_into().unwrap()))
 }
 
-pub fn get_contract_id_preimage(account_id: &AccountId, salt: &[u8; 32]) -> ContractIdPreimage {
+pub fn get_contract_id_preimage_from_address(
+    address: &ScAddress,
+    salt: &[u8; 32],
+) -> ContractIdPreimage {
     ContractIdPreimage::Address(ContractIdPreimageFromAddress {
-        address: ScAddress::Account(account_id.clone()),
+        address: address.clone(),
         salt: Uint256(*salt),
     })
+}
+
+pub fn get_contract_id_preimage(account_id: &AccountId, salt: &[u8; 32]) -> ContractIdPreimage {
+    get_contract_id_preimage_from_address(&ScAddress::Account(account_id.clone()), salt)
 }
 
 pub fn get_contract_id_hash(id_preimage: &ContractIdPreimage) -> [u8; 32] {
@@ -211,12 +231,31 @@ pub fn create_contract_auth(
     contract_id_preimage: &ContractIdPreimage,
     wasm: &[u8],
 ) -> SorobanAuthorizationEntry {
+    create_contract_auth_for_address(None, contract_id_preimage, wasm)
+}
+
+pub fn create_contract_auth_for_address(
+    address_and_nonce: Option<(ScAddress, i64)>,
+    contract_id_preimage: &ContractIdPreimage,
+    wasm: &[u8],
+) -> SorobanAuthorizationEntry {
+    let credentials = if let Some((address, nonce)) = address_and_nonce {
+        SorobanCredentials::Address(SorobanAddressCredentials {
+            address,
+            nonce,
+            signature_expiration_ledger: 0,
+            signature: ScVal::Void,
+        })
+    } else {
+        SorobanCredentials::SourceAccount
+    };
     SorobanAuthorizationEntry {
-        credentials: SorobanCredentials::SourceAccount,
+        credentials,
         root_invocation: SorobanAuthorizedInvocation {
-            function: SorobanAuthorizedFunction::CreateContractHostFn(CreateContractArgs {
+            function: SorobanAuthorizedFunction::CreateContractV2HostFn(CreateContractArgsV2 {
                 contract_id_preimage: contract_id_preimage.clone(),
                 executable: ContractExecutable::Wasm(get_wasm_hash(wasm).try_into().unwrap()),
+                constructor_args: Default::default(),
             }),
             sub_invocations: Default::default(),
         },

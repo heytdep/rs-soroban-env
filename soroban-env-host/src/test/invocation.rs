@@ -49,6 +49,7 @@ fn invoke_alloc() -> Result<(), HostError> {
     let host = observe_host!(Host::test_host_with_recording_footprint());
     host.enable_debug()?;
     let contract_id_obj = host.register_test_contract_wasm(ALLOC);
+    host.budget_ref().reset_default()?;
     let res = host.call(
         contract_id_obj,
         Symbol::try_from_small_str("sum")?,
@@ -276,8 +277,19 @@ impl ReturnContractError {
     const ERR: Error = Error::from_contract_error(12345);
 }
 impl ContractFunctionSet for ReturnContractError {
-    fn call(&self, _func: &Symbol, _host: &Host, _args: &[Val]) -> Option<Val> {
-        Some(Self::ERR.into())
+    fn call(&self, func: &Symbol, host: &Host, _args: &[Val]) -> Option<Val> {
+        if host
+            .compare(
+                &host.symbol_new_from_slice(b"__constructor").unwrap().into(),
+                func,
+            )
+            .unwrap()
+            .is_ne()
+        {
+            Some(Self::ERR.into())
+        } else {
+            Some(().into())
+        }
     }
 }
 
@@ -369,7 +381,7 @@ fn unrecoverable_error_with_cross_contract_try_call() -> Result<(), HostError> {
         host.register_test_contract_wasm(ADD_I32);
     let invoke_contract_id_obj = host.register_test_contract_wasm(INVOKE_CONTRACT);
 
-    let _ = host.clone().test_budget(5789, 10_048_576).enable_model(
+    let _ = host.clone().test_budget(1000, 10_048_576).enable_model(
         ContractCostType::WasmInsnExec,
         6,
         0,
@@ -401,7 +413,7 @@ fn unrecoverable_error_with_try_call() -> Result<(), HostError> {
     let host = observe_host!(Host::test_host_with_recording_footprint());
     let contract_id_obj = host.register_test_contract_wasm(ADD_I32);
 
-    let _ = host.clone().test_budget(2015, 1_048_576).enable_model(
+    let _ = host.clone().test_budget(250, 1_048_576).enable_model(
         ContractCostType::WasmInsnExec,
         6,
         0,

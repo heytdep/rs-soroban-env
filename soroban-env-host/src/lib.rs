@@ -26,10 +26,10 @@ mod macros;
 pub mod budget;
 pub mod events;
 pub use events::diagnostic::DiagnosticLevel;
+mod builtin_contracts;
+pub(crate) mod crypto;
 mod host;
 pub(crate) mod host_object;
-
-mod builtin_contracts;
 
 pub mod auth;
 pub mod vm;
@@ -42,6 +42,8 @@ pub use host::{
 pub use soroban_env_common::*;
 
 pub use wasmi;
+#[cfg(any(test, feature = "testutils"))]
+pub use host::invocation_metering::{FeeEstimate, InvocationResources};
 
 pub mod ledger_info;
 pub use ledger_info::LedgerInfo;
