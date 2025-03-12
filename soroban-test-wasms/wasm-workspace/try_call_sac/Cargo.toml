@@ -1,5 +1,5 @@
 [package]
-name = "test_deployer_with_constructor"
+name = "test_try_call_sac"
 version = "0.0.0"
 authors = ["Stellar Development Foundation <info@stellar.org>"]
 license = "Apache-2.0"

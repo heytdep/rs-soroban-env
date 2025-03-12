@@ -176,7 +176,7 @@ use super::xdr::Hash;
 use crate::{
     builtin_contracts::{account_contract::AccountEd25519Signature, base_types::BytesN},
     host::error::TryBorrowOrErr,
-    xdr::PublicKey,
+    xdr::{ContractExecutable, PublicKey},
 };
 #[cfg(any(test, feature = "recording_mode"))]
 use rand::Rng;
@@ -2072,9 +2072,44 @@ impl AccountAuthorizationTracker {
                 // - Return budget error in case if it was suppressed above.
                 let _ = acc.metered_clone(host.as_budget())?;
             }
-            // Skip custom accounts for now - emulating authentication for
-            // them requires a dummy signature.
-            ScAddress::Contract(_) => {}
+            // We only know for sure that the contract instance and Wasm will be
+            // loaded.
+            ScAddress::Contract(contract_id) => {
+                let instance_key = host.contract_instance_ledger_key(&contract_id)?;
+                let entry = host
+                    .try_borrow_storage_mut()?
+                    .try_get(&instance_key, host, None)?;
+                // In test scenarios we often may not have any actual instance, which is fine most
+                // of the time, so we don't return any errors.
+                // In simulation scenarios the instance will likely be there, and when it's
+                // not, we still make our best effort and include at least the necessary instance key
+                // into the footprint.
+                let instance = if let Some(entry) = entry {
+                    match &entry.data {
+                        LedgerEntryData::ContractData(e) => match &e.val {
+                            ScVal::ContractInstance(instance) => instance.metered_clone(host)?,
+                            _ => {
+                                return Ok(());
+                            }
+                        },
+                        _ => {
+                            return Ok(());
+                        }
+                    }
+                } else {
+                    return Ok(());
+                };
+
+                match &instance.executable {
+                    ContractExecutable::Wasm(wasm_hash) => {
+                        let wasm_key = host.contract_code_ledger_key(wasm_hash)?;
+                        let _ = host
+                            .try_borrow_storage_mut()?
+                            .try_get(&wasm_key, host, None)?;
+                    }
+                    ContractExecutable::StellarAsset => (),
+                }
+            }
         }
         Ok(())
     }
@@ -2298,6 +2333,28 @@ impl Host {
     /// preserving the auth state while doing the generic test setup).
     pub fn snapshot_auth_manager(&self) -> Result<AuthorizationManager, HostError> {
         Ok(self.try_borrow_authorization_manager()?.clone())
+    }
+
+    /// Switches host to the recording authorization mode and inherits the
+    /// recording mode settings from the provided authorization manager settings
+    /// in case if it used the recording mode.
+    ///
+    /// This is similar to `switch_to_recording_auth`, but should be preferred
+    /// to use in conjunction with `snapshot_auth_manager`, such that the
+    /// recording mode settings are not overridden.
+    pub fn switch_to_recording_auth_inherited_from_snapshot(
+        &self,
+        auth_manager_snapshot: &AuthorizationManager,
+    ) -> Result<(), HostError> {
+        let disable_non_root_auth = match &auth_manager_snapshot.mode {
+            AuthorizationMode::Enforcing => true,
+            AuthorizationMode::Recording(recording_auth_info) => {
+                recording_auth_info.disable_non_root_auth
+            }
+        };
+        *self.try_borrow_authorization_manager_mut()? =
+            AuthorizationManager::new_recording(disable_non_root_auth);
+        Ok(())
     }
 
     /// Replaces authorization manager with the provided new instance.
