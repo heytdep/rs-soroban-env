@@ -1304,7 +1304,7 @@ impl AuthorizationManager {
             #[cfg(any(test, feature = "testutils"))]
             Frame::TestContract(tc) => (tc.id.metered_clone(host)?, tc.func),
         };
-        let contract_address = host.add_host_object(ScAddress::Contract(contract_id))?;
+        let contract_address = host.add_host_object(ScAddress::Contract(xdr::ContractId(contract_id)))?;
         Vec::<ContractInvocation>::charge_bulk_init_cpy(1, host)?;
         self.try_borrow_call_stack_mut(host)?
             .push(AuthStackFrame::Contract(ContractInvocation {
@@ -2024,11 +2024,19 @@ impl AccountAuthorizationTracker {
             ScAddress::Contract(acc_contract) => {
                 check_account_contract_auth(
                     host,
-                    &acc_contract,
+                    &acc_contract.0,
                     &payload,
                     self.signature,
                     &self.invocation_tracker.root_authorized_invocation,
                 )?;
+            }
+            _ => {
+                return Err(host.err(
+                    ScErrorType::Auth,
+                    ScErrorCode::InvalidInput,
+                    "unsupported address type for authentication",
+                    &[],
+                ));
             }
         }
         Ok(())
@@ -2075,7 +2083,7 @@ impl AccountAuthorizationTracker {
             // We only know for sure that the contract instance and Wasm will be
             // loaded.
             ScAddress::Contract(contract_id) => {
-                let instance_key = host.contract_instance_ledger_key(&contract_id)?;
+                let instance_key = host.contract_instance_ledger_key(&contract_id.0)?;
                 let entry = host
                     .try_borrow_storage_mut()?
                     .try_get(&instance_key, host, None)?;
@@ -2110,6 +2118,7 @@ impl AccountAuthorizationTracker {
                     ContractExecutable::StellarAsset => (),
                 }
             }
+            _ => (),
         }
         Ok(())
     }
@@ -2158,7 +2167,7 @@ impl InvokerContractAuthorizationTracker {
         host: &Host,
         invoker_auth_entry: Val,
     ) -> Result<Self, HostError> {
-        let invoker_sc_addr = ScAddress::Contract(host.get_current_contract_id_internal()?);
+        let invoker_sc_addr = ScAddress::Contract(xdr::ContractId(host.get_current_contract_id_internal()?));
         let authorized_invocation = invoker_contract_auth_to_authorized_invocation(
             host,
             &invoker_sc_addr,

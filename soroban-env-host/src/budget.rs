@@ -140,6 +140,7 @@ impl Default for BudgetTracker {
                 ContractCostType::Bls12381FrMul => (),
                 ContractCostType::Bls12381FrPow => init_input(), // input is number of bits in the u64 exponent excluding leading zeros
                 ContractCostType::Bls12381FrInv => (),
+                _ => unreachable!("unknown cost type"),
             }
         }
         mt
@@ -598,6 +599,7 @@ impl Default for BudgetImpl {
                     cpu.const_term = 35421;
                     cpu.lin_term = ScaledU64(0);
                 }
+                _ => unreachable!("unknown cost type"),
             }
 
             // define the memory cost model parameters
@@ -890,6 +892,7 @@ impl Default for BudgetImpl {
                     mem.const_term = 0;
                     mem.lin_term = ScaledU64(0);
                 }
+                _ => unreachable!("unknown cost type"),
             }
         }
 

@@ -355,7 +355,7 @@ impl Host {
         let test = SymbolSmall::try_from_str("test").unwrap();
 
         // First step: insert all the data values in question into the storage map.
-        host.with_test_contract_frame(contract_hash.clone(), test.into(), || {
+        host.with_test_contract_frame(contract_hash.0.clone(), test.into(), || {
             for (k, (t, _)) in data_keys.iter() {
                 let v = host.to_host_val(k).unwrap();
                 host.put_contract_data(v, v, *t).unwrap();

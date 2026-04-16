@@ -13,9 +13,9 @@ use crate::{
     vm::{CustomContextVM, ModuleCache},
     xdr::{
         int128_helpers, AccountId, Asset, ContractCostType, ContractEventType, ContractExecutable,
-        ContractIdPreimage, ContractIdPreimageFromAddress, CreateContractArgsV2, Duration, Hash,
-        LedgerEntryData, PublicKey, ScAddress, ScBytes, ScErrorCode, ScErrorType, ScString,
-        ScSymbol, ScVal, TimePoint, Uint256,
+        ContractId, ContractIdPreimage, ContractIdPreimageFromAddress, CreateContractArgsV2,
+        Duration, Hash, LedgerEntryData, PublicKey, ScAddress, ScBytes, ScErrorCode, ScErrorType,
+        ScString, ScSymbol, ScVal, TimePoint, Uint256,
     },
     AddressObject, Bool, BytesObject, Compare, ConversionError, EnvBase, Error, LedgerInfo,
     MapObject, Object, StorageType, StringObject, Symbol, SymbolObject, SymbolSmall, TryFromVal,
@@ -1557,9 +1557,9 @@ impl VmCallerEnv for Host {
         _vmcaller: &mut VmCaller<Host>,
     ) -> Result<AddressObject, HostError> {
         // FIXME: cache this and a few other such IDs: https://github.com/stellar/rs-soroban-env/issues/681
-        self.add_host_object(ScAddress::Contract(
+        self.add_host_object(ScAddress::Contract(ContractId(
             self.get_current_contract_id_internal()?,
-        ))
+        )))
     }
 
     fn get_max_live_until_ledger(
@@ -2582,7 +2582,7 @@ impl VmCallerEnv for Host {
         salt: BytesObject,
     ) -> Result<AddressObject, HostError> {
         let hash_id = self.get_contract_id_hash(deployer, salt)?;
-        self.add_host_object(ScAddress::Contract(hash_id))
+        self.add_host_object(ScAddress::Contract(ContractId(hash_id)))
     }
 
     // Notes on metering: covered by the components.
@@ -2593,7 +2593,7 @@ impl VmCallerEnv for Host {
     ) -> Result<AddressObject, HostError> {
         let asset: Asset = self.metered_from_xdr_obj(serialized_asset)?;
         let hash_id = self.get_asset_contract_id_hash(asset)?;
-        self.add_host_object(ScAddress::Contract(hash_id))
+        self.add_host_object(ScAddress::Contract(ContractId(hash_id)))
     }
 
     fn upload_wasm(
@@ -3482,9 +3482,17 @@ impl VmCallerEnv for Host {
                     );
                     strkey
                 }
-                ScAddress::Contract(Hash(h)) => stellar_strkey::Strkey::Contract(
+                ScAddress::Contract(ContractId(Hash(h))) => stellar_strkey::Strkey::Contract(
                     stellar_strkey::Contract(h.metered_clone(self)?),
                 ),
+                _ => {
+                    return Err(self.err(
+                        ScErrorType::Value,
+                        ScErrorCode::InvalidInput,
+                        "unsupported address type for strkey conversion",
+                        &[],
+                    ));
+                }
             };
             Ok(strkey.to_string())
         })?;
@@ -3546,7 +3554,7 @@ impl VmCallerEnv for Host {
                     PublicKey::PublicKeyTypeEd25519(Uint256(pk.0)),
                 ))),
 
-                stellar_strkey::Strkey::Contract(c) => Ok(ScAddress::Contract(Hash(c.0))),
+                stellar_strkey::Strkey::Contract(c) => Ok(ScAddress::Contract(ContractId(Hash(c.0)))),
                 _ => {
                     return Err(self.err(
                         ScErrorType::Value,

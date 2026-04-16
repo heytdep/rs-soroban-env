@@ -9,7 +9,7 @@ use crate::{
     vm::VersionedContractCodeCostInputs,
     xdr::{
         AccountEntry, AccountId, Asset, BytesM, ContractCodeEntry, ContractDataDurability,
-        ContractDataEntry, ContractExecutable, ContractIdPreimage, ExtensionPoint, Hash,
+        ContractDataEntry, ContractExecutable, ContractId, ContractIdPreimage, ExtensionPoint, Hash,
         HashIdPreimage, HashIdPreimageContractId, LedgerEntry, LedgerEntryData, LedgerEntryExt,
         LedgerKey, LedgerKeyAccount, LedgerKeyContractCode, LedgerKeyContractData,
         LedgerKeyTrustLine, PublicKey, ScAddress, ScContractInstance, ScErrorCode, ScErrorType,
@@ -81,7 +81,7 @@ impl Host {
             LedgerKey::ContractData(LedgerKeyContractData {
                 key: ScVal::LedgerKeyContractInstance,
                 durability: ContractDataDurability::Persistent,
-                contract: ScAddress::Contract(contract_id),
+                contract: ScAddress::Contract(ContractId(contract_id)),
             }),
             self,
         )
@@ -220,7 +220,7 @@ impl Host {
             )?;
         } else {
             let data = ContractDataEntry {
-                contract: ScAddress::Contract(contract_id.metered_clone(self)?),
+                contract: ScAddress::Contract(ContractId(contract_id.metered_clone(self)?)),
                 key: ScVal::LedgerKeyContractInstance,
                 val: ScVal::ContractInstance(ScContractInstance {
                     executable: executable.ok_or_else(|| {
@@ -450,7 +450,13 @@ impl Host {
                 "not a contract address",
                 &[],
             )),
-            ScAddress::Contract(contract_id) => Ok(contract_id),
+            ScAddress::Contract(contract_id) => Ok(contract_id.0),
+            _ => Err(self.err(
+                ScErrorType::Object,
+                ScErrorCode::InvalidInput,
+                "not a contract address",
+                &[],
+            )),
         }
     }
 
@@ -505,7 +511,7 @@ impl Host {
             )?;
         } else {
             let data = ContractDataEntry {
-                contract: ScAddress::Contract(self.get_current_contract_id_internal()?),
+                contract: ScAddress::Contract(ContractId(self.get_current_contract_id_internal()?)),
                 key: self.from_host_val(k)?,
                 val: self.from_host_val(v)?,
                 durability,

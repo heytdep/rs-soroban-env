@@ -6,9 +6,9 @@ use crate::{
     },
     vm::Vm,
     xdr::{
-        Asset, ContractCodeEntry, ContractDataDurability, ContractExecutable, ContractIdPreimage,
-        ContractIdPreimageFromAddress, CreateContractArgsV2, ExtensionPoint, Hash, LedgerKey,
-        LedgerKeyContractCode, ScAddress, ScErrorCode, ScErrorType,
+        Asset, ContractCodeEntry, ContractDataDurability, ContractExecutable, ContractId,
+        ContractIdPreimage, ContractIdPreimageFromAddress, CreateContractArgsV2, ExtensionPoint,
+        Hash, LedgerKey, LedgerKeyContractCode, ScAddress, ScErrorCode, ScErrorType,
     },
     AddressObject, BytesObject, Host, HostError, Symbol, TryFromVal, TryIntoVal, Val,
 };
@@ -184,7 +184,7 @@ impl Host {
         if matches!(args.executable, ContractExecutable::Wasm(_)) {
             self.call_constructor(&contract_id, constructor_args)?;
         }
-        self.add_host_object(ScAddress::Contract(contract_id))
+        self.add_host_object(ScAddress::Contract(ContractId(contract_id)))
     }
 
     pub(crate) fn get_contract_id_hash(

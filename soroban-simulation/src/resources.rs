@@ -27,7 +27,7 @@ use std::rc::Rc;
 impl SimulationAdjustmentConfig {
     fn adjust_resources(&self, resources: &mut SorobanResources) {
         resources.instructions = self.instructions.adjust_u32(resources.instructions);
-        resources.read_bytes = self.read_bytes.adjust_u32(resources.read_bytes);
+        resources.disk_read_bytes = self.read_bytes.adjust_u32(resources.disk_read_bytes);
         resources.write_bytes = self.write_bytes.adjust_u32(resources.write_bytes);
     }
 }
@@ -95,7 +95,7 @@ pub fn compute_adjusted_transaction_resources(
             + simulated_operation_resources.footprint.read_write.len())
             as u32,
         write_entries: simulated_operation_resources.footprint.read_write.len() as u32,
-        read_bytes: simulated_operation_resources.read_bytes,
+        read_bytes: simulated_operation_resources.disk_read_bytes,
         write_bytes: simulated_operation_resources.write_bytes,
         transaction_size_bytes: adjustment_config.tx_size.adjust_u32(
             estimate_max_transaction_size_for_operation(operation, &simulated_operation_resources)
@@ -136,7 +136,7 @@ pub fn simulate_invoke_host_function_op_resources(
     let resources = SorobanResources {
         footprint,
         instructions: simulated_instructions,
-        read_bytes,
+        disk_read_bytes: read_bytes,
         write_bytes,
     };
     let rent_changes = extract_rent_changes(ledger_changes);
@@ -184,7 +184,7 @@ pub(crate) fn simulate_extend_ttl_op_resources(
             read_write: Default::default(),
         },
         instructions: 0,
-        read_bytes,
+        disk_read_bytes: read_bytes,
         write_bytes: 0,
     };
     Ok((resources, rent_changes))
@@ -241,7 +241,7 @@ pub(crate) fn simulate_restore_op_resources(
             read_write: restored_keys.try_into()?,
         },
         instructions: 0,
-        read_bytes: restored_bytes,
+        disk_read_bytes: restored_bytes,
         write_bytes: restored_bytes,
     };
     Ok((resources, rent_changes))
@@ -296,7 +296,7 @@ fn estimate_max_transaction_size_for_operation(
                 resources: SorobanResources {
                     footprint: resources.footprint.clone(),
                     instructions: 0,
-                    read_bytes: 0,
+                    disk_read_bytes: 0,
                     write_bytes: 0,
                 },
                 resource_fee: 0,
