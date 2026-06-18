@@ -109,7 +109,8 @@ fn sign_auth_entry(
 
     match &mut out.credentials {
         SorobanCredentials::SourceAccount => {}
-        SorobanCredentials::Address(creds) => {
+        SorobanCredentials::AddressWithDelegates(_) => {}
+        SorobanCredentials::Address(creds) | SorobanCredentials::AddressV2(creds) => {
             let signature_payload_preimage =
                 HashIdPreimage::SorobanAuthorization(HashIdPreimageSorobanAuthorization {
                     network_id: ledger_info.network_id.try_into().unwrap(),

@@ -1753,8 +1753,11 @@ impl AccountAuthorizationTracker {
                     Val::VOID.into(),
                     true,
                 ),
-                // NB: CAP-71 AddressV2 wraps the same SorobanAddressCredentials as Address
-                // and is the going-forward standard address credential; handle identically.
+                // NB: CAP-71 AddressV2 wraps the same SorobanAddressCredentials as Address.
+                // Mercury runs retroshades in recording mode only (no signature verification),
+                // so reusing the Address path is safe here. NB: enforcing-mode verification of
+                // AddressV2 needs the CAP-71 address-bound signature preimage
+                // (HashIdPreimageSorobanAuthorizationWithAddress), NOT implemented here. See MER-059.
                 SorobanCredentials::Address(address_creds)
                 | SorobanCredentials::AddressV2(address_creds) => (
                     host.add_host_object(address_creds.address)?,
