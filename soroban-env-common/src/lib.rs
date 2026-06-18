@@ -102,11 +102,9 @@ pub use num::{I256, U256};
 
 pub use storage_type::StorageType;
 
-// Re-export the XDR definitions of a specific version -- curr or next -- of the xdr crate.
-#[cfg(not(feature = "next"))]
-pub use stellar_xdr::curr as xdr;
-#[cfg(feature = "next")]
-pub use stellar_xdr::next as xdr;
+// Re-export the XDR definitions. As of stellar-xdr v27 the curr/next module split
+// was removed; types live flat at the crate root.
+pub use stellar_xdr as xdr;
 
 // Val is the 64-bit transparent type.
 pub use val::{ConversionError, Tag, Val};

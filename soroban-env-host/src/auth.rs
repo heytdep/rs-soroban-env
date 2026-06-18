@@ -1753,7 +1753,10 @@ impl AccountAuthorizationTracker {
                     Val::VOID.into(),
                     true,
                 ),
-                SorobanCredentials::Address(address_creds) => (
+                // NB: CAP-71 AddressV2 wraps the same SorobanAddressCredentials as Address
+                // and is the going-forward standard address credential; handle identically.
+                SorobanCredentials::Address(address_creds)
+                | SorobanCredentials::AddressV2(address_creds) => (
                     host.add_host_object(address_creds.address)?,
                     Some((
                         address_creds.nonce,
@@ -1762,6 +1765,16 @@ impl AccountAuthorizationTracker {
                     host.to_host_val(&address_creds.signature)?,
                     false,
                 ),
+                // NB: CAP-71 delegated auth is not implemented in this zephyr host fork.
+                // re-execution of a delegated-auth tx fails here rather than mis-indexing.
+                SorobanCredentials::AddressWithDelegates(_) => {
+                    return Err(host.err(
+                        ScErrorType::Auth,
+                        ScErrorCode::InternalError,
+                        "CAP-71 delegated auth (AddressWithDelegates) is not supported by this host build",
+                        &[],
+                    ));
+                }
             };
         Ok(Self {
             address,
