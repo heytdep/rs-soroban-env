@@ -16,6 +16,13 @@ impl ContractExecutable {
                 BytesN::<32>::from_slice(host, &wasm_hash.0)?,
             )),
             xdr::ContractExecutable::StellarAsset => Ok(ContractExecutable::StellarAsset),
+            // NB: cap-85 external-ref executables are not supported by this host build
+            xdr::ContractExecutable::ExternalRef(_) => Err(host.err(
+                xdr::ScErrorType::Value,
+                xdr::ScErrorCode::InternalError,
+                "CAP-85 external-ref executable is not supported by this host build",
+                &[],
+            )),
         }
     }
 }

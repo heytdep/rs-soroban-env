@@ -3725,6 +3725,13 @@ impl Host {
                 "Stellar Asset Contracts don't have contract code",
                 &[],
             )),
+            // NB: cap-85 external-ref executables are not supported by this host build
+            ContractExecutable::ExternalRef(_) => Err(self.err(
+                ScErrorType::Storage,
+                ScErrorCode::InternalError,
+                "CAP-85 external-ref executable is not supported by this host build",
+                &[],
+            )),
         }
     }
 

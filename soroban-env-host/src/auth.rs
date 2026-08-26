@@ -2132,6 +2132,9 @@ impl AccountAuthorizationTracker {
                             .try_get(&wasm_key, host, None)?;
                     }
                     ContractExecutable::StellarAsset => (),
+                    // NB: cap-85 external-ref executables unsupported in this fork;
+                    // nothing to prime, invocation fails later in frame.rs.
+                    ContractExecutable::ExternalRef(_) => (),
                 }
             }
             _ => (),

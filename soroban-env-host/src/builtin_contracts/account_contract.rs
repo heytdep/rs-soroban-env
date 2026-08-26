@@ -90,6 +90,13 @@ impl AuthorizationContext {
                         "StellarAsset executable is not allowed when authorizing create_contract host fn",
                         &[],
                     )),
+                    // NB: cap-85 external-ref executables are not supported by this host build
+                    xdr::ContractExecutable::ExternalRef(_) => return Err(host.err(
+                        ScErrorType::Auth,
+                        ScErrorCode::InternalError,
+                        "CAP-85 external-ref executable is not supported by this host build",
+                        &[],
+                    )),
                 };
                 let salt = match &args.contract_id_preimage {
                     ContractIdPreimage::Address(id_from_addr) => {

@@ -436,6 +436,7 @@ impl MeteredClone for ScVal {
                 ScVal::Bytes(b) => BytesM::charge_for_substructure(b, budget),
                 ScVal::String(s) => StringM::charge_for_substructure(s, budget),
                 ScVal::Symbol(s) => StringM::charge_for_substructure(s, budget),
+                ScVal::ExecutableTag(s) => StringM::charge_for_substructure(s, budget),
                 ScVal::ContractInstance(i) => {
                     ScContractInstance::charge_for_substructure(i, budget)
                 }

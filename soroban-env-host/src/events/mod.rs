@@ -105,6 +105,11 @@ fn display_scval(scv: &ScVal, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Resu
             executable: ContractExecutable::StellarAsset,
             ..
         }) => write!(f, "ContractInstance(StellarAsset)"),
+        ScVal::ContractInstance(ScContractInstance {
+            executable: ContractExecutable::ExternalRef(_),
+            ..
+        }) => write!(f, "ContractInstance(ExternalRef)"),
+        ScVal::ExecutableTag(v) => write!(f, "ExecutableTag(\"{}\")", v.0),
     }
 }
 

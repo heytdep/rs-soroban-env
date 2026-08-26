@@ -594,7 +594,8 @@ where
             | ScVal::Address(_)
             | ScVal::LedgerKeyNonce(_)
             | ScVal::LedgerKeyContractInstance
-            | ScVal::ContractInstance(_) => return Err(ConversionError.into()),
+            | ScVal::ContractInstance(_)
+            | ScVal::ExecutableTag(_) => return Err(ConversionError.into()),
         })
     }
 }
