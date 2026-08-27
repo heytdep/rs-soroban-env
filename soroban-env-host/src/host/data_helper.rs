@@ -263,6 +263,15 @@ impl Host {
                     .extend_ttl(self, key, threshold, extend_to, None)?;
             }
             ContractExecutable::StellarAsset => {}
+            // NB: cap-85 external-ref executables are not supported by this host build
+            ContractExecutable::ExternalRef(_) => {
+                return Err(self.err(
+                    ScErrorType::Value,
+                    ScErrorCode::InternalError,
+                    "CAP-85 external-ref executable is not supported by this host build",
+                    &[],
+                ));
+            }
         }
         Ok(())
     }

@@ -515,7 +515,8 @@ impl Host {
             | ScVal::I32(_)
             | ScVal::LedgerKeyNonce(_)
             | ScVal::ContractInstance(_)
-            | ScVal::LedgerKeyContractInstance => Err(self.err(
+            | ScVal::LedgerKeyContractInstance
+            | ScVal::ExecutableTag(_) => Err(self.err(
                 ScErrorType::Value,
                 ScErrorCode::InternalError,
                 "converting ScValObjRef on non-object ScVal type",
