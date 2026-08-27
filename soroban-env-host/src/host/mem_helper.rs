@@ -98,7 +98,7 @@ impl Host {
         m: &'a M,
         pos: U32Val,
         len: U32Val,
-    ) -> MemFnArgsCustomVm<M> {
+    ) -> MemFnArgsCustomVm<'a, M> {
         let pos: u32 = pos.into();
         let len: u32 = len.into();
 
@@ -110,7 +110,7 @@ impl Host {
         m: &'a mut M,
         pos: U32Val,
         len: U32Val,
-    ) -> MemFnArgsCustomVmMut<M> {
+    ) -> MemFnArgsCustomVmMut<'a, M> {
         let pos: u32 = pos.into();
         let len: u32 = len.into();
 

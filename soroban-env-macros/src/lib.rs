@@ -11,11 +11,8 @@ use proc_macro::TokenStream;
 use quote::{quote, ToTokens};
 use syn::{parse::Parse, parse_macro_input, Ident, LitInt, LitStr, Token};
 
-// Import the XDR definitions of a specific version -- curr or next -- of the xdr crate.
-#[cfg(not(feature = "next"))]
-use stellar_xdr::curr as xdr;
-#[cfg(feature = "next")]
-use stellar_xdr::next as xdr;
+// stellar-xdr v27 removed the curr/next module split; types live flat at the crate root.
+use stellar_xdr as xdr;
 
 use crate::xdr::{Limits, ScEnvMetaEntry, ScEnvMetaEntryInterfaceVersion, WriteXdr};
 

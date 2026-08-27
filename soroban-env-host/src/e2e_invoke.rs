@@ -487,10 +487,13 @@ impl RecordedAuthPayload {
 #[cfg(any(test, feature = "recording_mode"))]
 fn clear_signature(auth_entry: &mut SorobanAuthorizationEntry) {
     match &mut auth_entry.credentials {
-        SorobanCredentials::Address(address_creds) => {
+        SorobanCredentials::Address(address_creds)
+        | SorobanCredentials::AddressV2(address_creds) => {
             address_creds.signature = ScVal::Void;
         }
         SorobanCredentials::SourceAccount => {}
+        // NB: CAP-71 delegated auth unsupported in this fork (see auth.rs); nothing to clear.
+        SorobanCredentials::AddressWithDelegates(_) => {}
     }
 }
 
@@ -628,7 +631,7 @@ pub fn invoke_host_function_in_recording_mode(
     let mut resources = SorobanResources {
         footprint,
         instructions: 0,
-        read_bytes,
+        disk_read_bytes: read_bytes,
         write_bytes: 0,
     };
     let _resources_roundtrip: SorobanResources =

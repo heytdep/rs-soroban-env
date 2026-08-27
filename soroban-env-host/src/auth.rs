@@ -1304,7 +1304,7 @@ impl AuthorizationManager {
             #[cfg(any(test, feature = "testutils"))]
             Frame::TestContract(tc) => (tc.id.metered_clone(host)?, tc.func),
         };
-        let contract_address = host.add_host_object(ScAddress::Contract(contract_id))?;
+        let contract_address = host.add_host_object(ScAddress::Contract(xdr::ContractId(contract_id)))?;
         Vec::<ContractInvocation>::charge_bulk_init_cpy(1, host)?;
         self.try_borrow_call_stack_mut(host)?
             .push(AuthStackFrame::Contract(ContractInvocation {
@@ -1753,7 +1753,13 @@ impl AccountAuthorizationTracker {
                     Val::VOID.into(),
                     true,
                 ),
-                SorobanCredentials::Address(address_creds) => (
+                // NB: CAP-71 AddressV2 wraps the same SorobanAddressCredentials as Address.
+                // Mercury runs retroshades in recording mode only (no signature verification),
+                // so reusing the Address path is safe here. NB: enforcing-mode verification of
+                // AddressV2 needs the CAP-71 address-bound signature preimage
+                // (HashIdPreimageSorobanAuthorizationWithAddress), NOT implemented here. See MER-059.
+                SorobanCredentials::Address(address_creds)
+                | SorobanCredentials::AddressV2(address_creds) => (
                     host.add_host_object(address_creds.address)?,
                     Some((
                         address_creds.nonce,
@@ -1762,6 +1768,16 @@ impl AccountAuthorizationTracker {
                     host.to_host_val(&address_creds.signature)?,
                     false,
                 ),
+                // NB: CAP-71 delegated auth is not implemented in this zephyr host fork.
+                // re-execution of a delegated-auth tx fails here rather than mis-indexing.
+                SorobanCredentials::AddressWithDelegates(_) => {
+                    return Err(host.err(
+                        ScErrorType::Auth,
+                        ScErrorCode::InternalError,
+                        "CAP-71 delegated auth (AddressWithDelegates) is not supported by this host build",
+                        &[],
+                    ));
+                }
             };
         Ok(Self {
             address,
@@ -2024,11 +2040,19 @@ impl AccountAuthorizationTracker {
             ScAddress::Contract(acc_contract) => {
                 check_account_contract_auth(
                     host,
-                    &acc_contract,
+                    &acc_contract.0,
                     &payload,
                     self.signature,
                     &self.invocation_tracker.root_authorized_invocation,
                 )?;
+            }
+            _ => {
+                return Err(host.err(
+                    ScErrorType::Auth,
+                    ScErrorCode::InvalidInput,
+                    "unsupported address type for authentication",
+                    &[],
+                ));
             }
         }
         Ok(())
@@ -2075,7 +2099,7 @@ impl AccountAuthorizationTracker {
             // We only know for sure that the contract instance and Wasm will be
             // loaded.
             ScAddress::Contract(contract_id) => {
-                let instance_key = host.contract_instance_ledger_key(&contract_id)?;
+                let instance_key = host.contract_instance_ledger_key(&contract_id.0)?;
                 let entry = host
                     .try_borrow_storage_mut()?
                     .try_get(&instance_key, host, None)?;
@@ -2108,8 +2132,12 @@ impl AccountAuthorizationTracker {
                             .try_get(&wasm_key, host, None)?;
                     }
                     ContractExecutable::StellarAsset => (),
+                    // NB: cap-85 external-ref executables unsupported in this fork;
+                    // nothing to prime, invocation fails later in frame.rs.
+                    ContractExecutable::ExternalRef(_) => (),
                 }
             }
+            _ => (),
         }
         Ok(())
     }
@@ -2158,7 +2186,7 @@ impl InvokerContractAuthorizationTracker {
         host: &Host,
         invoker_auth_entry: Val,
     ) -> Result<Self, HostError> {
-        let invoker_sc_addr = ScAddress::Contract(host.get_current_contract_id_internal()?);
+        let invoker_sc_addr = ScAddress::Contract(xdr::ContractId(host.get_current_contract_id_internal()?));
         let authorized_invocation = invoker_contract_auth_to_authorized_invocation(
             host,
             &invoker_sc_addr,

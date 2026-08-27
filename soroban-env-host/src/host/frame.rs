@@ -697,6 +697,14 @@ impl Host {
                     StellarAssetContract.call(func, self, args)
                 },
             ),
+            // NB: cap-85 external-ref executables are not supported by this host build.
+            // re-execution of such a tx fails here rather than mis-indexing.
+            ContractExecutable::ExternalRef(_) => Err(self.err(
+                ScErrorType::Context,
+                ScErrorCode::InternalError,
+                "CAP-85 external-ref executable is not supported by this host build",
+                &[],
+            )),
         }
     }
 
@@ -812,6 +820,13 @@ impl Host {
                 Ok(vm.module.proto_version)
             }
             ContractExecutable::StellarAsset => self.get_ledger_protocol_version(),
+            // NB: cap-85 external-ref executables are not supported by this host build
+            ContractExecutable::ExternalRef(_) => Err(self.err(
+                ScErrorType::Context,
+                ScErrorCode::InternalError,
+                "CAP-85 external-ref executable is not supported by this host build",
+                &[],
+            )),
         }
     }
 
@@ -1027,7 +1042,7 @@ impl Host {
                     let function_name: Symbol = invoke_args.function_name.try_into_val(self)?;
                     let args = self.scvals_to_val_vec(invoke_args.args.as_slice())?;
                     self.call_n_internal(
-                        contract_id,
+                        &contract_id.0,
                         function_name,
                         args.as_slice(),
                         CallParams::default_external_call(),

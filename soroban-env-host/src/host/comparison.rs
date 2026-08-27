@@ -262,6 +262,10 @@ impl Compare<ScVal> for Budget {
                 <Self as Compare<&[u8]>>::compare(self, &a.as_slice(), &b.as_slice())
             }
 
+            (ExecutableTag(a), ExecutableTag(b)) => {
+                <Self as Compare<&[u8]>>::compare(self, &a.as_slice(), &b.as_slice())
+            }
+
             (ContractInstance(a), ContractInstance(b)) => self.compare(&a, &b),
 
             // These two cases are content-free, besides their discriminant.
@@ -308,7 +312,8 @@ impl Compare<ScVal> for Budget {
             | (I256(_), _)
             | (Address(_), _)
             | (LedgerKeyContractInstance, _)
-            | (LedgerKeyNonce(_), _) => Ok(a.discriminant().cmp(&b.discriminant())),
+            | (LedgerKeyNonce(_), _)
+            | (ExecutableTag(_), _) => Ok(a.discriminant().cmp(&b.discriminant())),
         })
     }
 }

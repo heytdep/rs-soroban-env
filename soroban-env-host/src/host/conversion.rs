@@ -147,7 +147,7 @@ impl Host {
         durability: ContractDataDurability,
     ) -> Result<Rc<LedgerKey>, HostError> {
         let contract_id = self.get_current_contract_id_internal()?;
-        self.storage_key_for_address(ScAddress::Contract(contract_id), key, durability)
+        self.storage_key_for_address(ScAddress::Contract(xdr::ContractId(contract_id)), key, durability)
     }
 
     /// Converts a [`Val`] to an [`ScVal`] and combines it with the currently-executing
@@ -515,7 +515,8 @@ impl Host {
             | ScVal::I32(_)
             | ScVal::LedgerKeyNonce(_)
             | ScVal::ContractInstance(_)
-            | ScVal::LedgerKeyContractInstance => Err(self.err(
+            | ScVal::LedgerKeyContractInstance
+            | ScVal::ExecutableTag(_) => Err(self.err(
                 ScErrorType::Value,
                 ScErrorCode::InternalError,
                 "converting ScValObjRef on non-object ScVal type",

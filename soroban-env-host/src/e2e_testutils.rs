@@ -2,8 +2,9 @@ use crate::vm::ParsedModule;
 use crate::xdr::{
     AccountEntry, AccountEntryExt, AccountId, ContractCodeEntry, ContractCodeEntryExt,
     ContractCodeEntryV1, ContractDataDurability, ContractDataEntry, ContractExecutable,
-    ContractIdPreimage, ContractIdPreimageFromAddress, CreateContractArgs, CreateContractArgsV2,
-    ExtensionPoint, HashIdPreimage, HashIdPreimageContractId, HostFunction, InvokeContractArgs,
+    ContractId, ContractIdPreimage, ContractIdPreimageFromAddress, CreateContractArgs,
+    CreateContractArgsV2,
+    ExtensionPoint, Hash, HashIdPreimage, HashIdPreimageContractId, HostFunction, InvokeContractArgs,
     LedgerEntry, LedgerEntryData, LedgerEntryExt, LedgerKey, LedgerKeyContractCode,
     LedgerKeyContractData, Limits, PublicKey, ScAddress, ScBytes, ScContractInstance, ScMapEntry,
     ScSymbol, ScVal, SequenceNumber, SorobanAddressCredentials, SorobanAuthorizationEntry,
@@ -153,11 +154,9 @@ impl CreateContractData {
             contract_id_preimage: contract_id_preimage.clone(),
             executable: ContractExecutable::Wasm(get_wasm_hash(wasm).try_into().unwrap()),
         });
-        let contract_address = ScAddress::Contract(
-            get_contract_id_hash(&contract_id_preimage)
-                .try_into()
-                .unwrap(),
-        );
+        let contract_address = ScAddress::Contract(ContractId(Hash(
+            get_contract_id_hash(&contract_id_preimage),
+        )));
         let contract_key = LedgerKey::ContractData(LedgerKeyContractData {
             contract: contract_address.clone(),
             key: ScVal::LedgerKeyContractInstance,

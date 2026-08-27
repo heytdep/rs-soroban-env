@@ -612,9 +612,11 @@ impl Val {
             | ScValType::Vec
             | ScValType::Map
             | ScValType::Address => true,
+            // NB: cap-85 executable tag values are not representable in this fork
             ScValType::ContractInstance
             | ScValType::LedgerKeyContractInstance
-            | ScValType::LedgerKeyNonce => false,
+            | ScValType::LedgerKeyNonce
+            | ScValType::ExecutableTag => false,
         }
     }
 

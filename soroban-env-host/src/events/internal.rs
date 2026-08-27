@@ -25,7 +25,7 @@ impl InternalContractEvent {
         let topics = host.vecobject_to_scval_vec(self.topics)?;
         let data = host.from_host_val(self.data)?;
         let contract_id = match self.contract_id {
-            Some(id) => Some(host.hash_from_bytesobj_input("contract_id", id)?),
+            Some(id) => Some(xdr::ContractId(host.hash_from_bytesobj_input("contract_id", id)?)),
             None => None,
         };
         Ok(xdr::ContractEvent {
@@ -141,7 +141,7 @@ impl InternalDiagnosticEvent {
         };
         Ok(xdr::ContractEvent {
             ext: xdr::ExtensionPoint::V0,
-            contract_id: self.contract_id.metered_clone(host)?,
+            contract_id: self.contract_id.metered_clone(host)?.map(xdr::ContractId),
             type_: xdr::ContractEventType::Diagnostic,
             body: xdr::ContractEventBody::V0(xdr::ContractEventV0 { topics, data }),
         })

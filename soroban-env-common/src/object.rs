@@ -128,6 +128,7 @@ impl<'a> ScValObjRef<'a> {
         match value {
             // Always-small values are never ScValObject, nor are
             // ScVals that don't actually project into Vals at all.
+            // NB: cap-85 executable tag has no object representation in this fork
             ScVal::Bool(_)
             | ScVal::Void
             | ScVal::Error(_)
@@ -135,7 +136,8 @@ impl<'a> ScValObjRef<'a> {
             | ScVal::I32(_)
             | ScVal::LedgerKeyContractInstance
             | ScVal::LedgerKeyNonce(_)
-            | ScVal::ContractInstance(_) => None,
+            | ScVal::ContractInstance(_)
+            | ScVal::ExecutableTag(_) => None,
 
             // Always-large values are always ScValObject
             ScVal::Bytes(_)

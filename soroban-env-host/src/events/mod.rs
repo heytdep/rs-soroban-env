@@ -33,9 +33,10 @@ fn display_address(addr: &ScAddress, f: &mut std::fmt::Formatter<'_>) -> std::fm
             }
         },
         ScAddress::Contract(hash) => {
-            let strkey = stellar_strkey::Contract(hash.0);
+            let strkey = stellar_strkey::Contract(hash.0.0);
             write!(f, "{}", strkey)
         }
+        _ => write!(f, "<unsupported address type>"),
     }
 }
 
@@ -104,6 +105,11 @@ fn display_scval(scv: &ScVal, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Resu
             executable: ContractExecutable::StellarAsset,
             ..
         }) => write!(f, "ContractInstance(StellarAsset)"),
+        ScVal::ContractInstance(ScContractInstance {
+            executable: ContractExecutable::ExternalRef(_),
+            ..
+        }) => write!(f, "ContractInstance(ExternalRef)"),
+        ScVal::ExecutableTag(v) => write!(f, "ExecutableTag(\"{}\")", v.0),
     }
 }
 
@@ -117,7 +123,7 @@ impl core::fmt::Display for HostEvent {
         match &self.event.contract_id {
             None => (),
             Some(hash) => {
-                let strkey = stellar_strkey::Contract(hash.0);
+                let strkey = stellar_strkey::Contract(hash.0.0);
                 write!(f, "contract:{}, ", strkey)?
             }
         }
